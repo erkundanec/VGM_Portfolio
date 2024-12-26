@@ -1,0 +1,36 @@
+2024-12-26 16:18:14 - INFO - Starting to filter recent {NUM_QUARTERS} quarters.
+2024-12-26 16:18:14 - INFO - Converted 'date' column to datetime format.
+2024-12-26 16:18:14 - INFO - Sorted DataFrame by 'tic' and 'date'.
+2024-12-26 16:18:14 - INFO - Filtered DataFrame to include dates before 2024-12-26 00:00:00.
+2024-12-26 16:18:14 - INFO - Ranked quarters for each ticker.
+2024-12-26 16:18:14 - INFO - Filtered DataFrame to include the most recent 24 quarters.
+2024-12-26 16:18:14 - INFO - Finished filtering recent quarters.
+2024-12-26 16:20:49 - INFO - Advertising Agencies: Number of NaN values before imputation = 0
+2024-12-26 16:20:54 - INFO - Advertising Agencies: No missing values found, skipping imputation.
+2024-12-26 16:47:55 - INFO - Starting to filter recent {NUM_QUARTERS} quarters.
+2024-12-26 16:47:55 - INFO - Converted 'date' column to datetime format.
+2024-12-26 16:47:55 - INFO - Sorted DataFrame by 'tic' and 'date'.
+2024-12-26 16:47:55 - INFO - Filtered DataFrame to include dates before 2024-12-26 00:00:00.
+2024-12-26 16:47:55 - INFO - Ranked quarters for each ticker.
+2024-12-26 16:47:55 - INFO - Filtered DataFrame to include the most recent 24 quarters.
+2024-12-26 16:47:55 - INFO - Finished filtering recent quarters.
+2024-12-26 16:47:55 - INFO - Advertising Agencies: Number of NaN values before imputation = 0
+2024-12-26 16:47:55 - INFO - Advertising Agencies: No missing values found, skipping imputation.
+2024-12-26 16:53:50 - INFO - Starting to filter recent {NUM_QUARTERS} quarters.
+2024-12-26 16:53:50 - INFO - Converted 'date' column to datetime format.
+2024-12-26 16:53:50 - INFO - Sorted DataFrame by 'tic' and 'date'.
+2024-12-26 16:53:50 - INFO - Filtered DataFrame to include dates before 2024-12-26 00:00:00.
+2024-12-26 16:53:50 - INFO - Ranked quarters for each ticker.
+2024-12-26 16:53:50 - INFO - Filtered DataFrame to include the most recent 24 quarters.
+2024-12-26 16:53:50 - INFO - Finished filtering recent quarters.
+2024-12-26 16:53:50 - INFO - Advertising Agencies: Number of NaN values before imputation = 0
+2024-12-26 16:53:50 - INFO - Advertising Agencies: No missing values found, skipping imputation.
+2024-12-26 17:42:10 - INFO - Starting to filter recent {NUM_QUARTERS} quarters.
+2024-12-26 17:42:10 - INFO - Converted 'date' column to datetime format.
+2024-12-26 17:42:10 - INFO - Sorted DataFrame by 'tic' and 'date'.
+2024-12-26 17:42:10 - INFO - Filtered DataFrame to include dates before 2024-12-26 00:00:00.
+2024-12-26 17:42:10 - INFO - Ranked quarters for each ticker.
+2024-12-26 17:42:10 - INFO - Filtered DataFrame to include the most recent 24 quarters.
+2024-12-26 17:42:10 - INFO - Finished filtering recent quarters.
+2024-12-26 17:42:10 - INFO - Advertising Agencies: Number of NaN values before imputation = 0
+2024-12-26 17:42:10 - INFO - Advertising Agencies: No missing values found, skipping imputation.

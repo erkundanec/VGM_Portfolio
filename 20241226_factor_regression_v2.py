@@ -21,7 +21,21 @@ from scipy import stats
 from datetime import timedelta
 
 import seaborn as sns
+
+# ============================   Configure logging   ============================
 import logging
+log_file = 'logfile.log'
+
+# Check if log file exists, otherwise create one
+if not os.path.exists(log_file):
+    open(log_file, 'w').close()
+
+# Configure logging
+logging.basicConfig(filename=log_file,
+                    level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S')  # Format without milliseconds
+
 import matplotlib.pyplot as plt
 plt.rcParams['font.size'] = 14                                      # Change 14 to your preferred size
 
@@ -38,6 +52,7 @@ GROWTH_METRICES = ['revenueGrowth','epsgrowth','freeCashFlowGrowth','returnOnEqu
 TARGET = ['er']
 
 NUM_QUARTERS = 24
+OUTLIER_WIDTH = 3
 
 start = time.time()
 
@@ -81,7 +96,8 @@ rf_value_coeffs_df  = pd.DataFrame()
 perm_importance_value_coeffs_df = pd.DataFrame()
 COUNT_MULCOL = 0
 
-FORMATION_DATE = pd.to_datetime("today").date()
+FORMATION_DATE = pd.to_datetime("today").normalize()
+
 REQ_COLUMNS = METRICS + TARGET
 
 def filter_outliers(df,cols, method = 'zscore'):
@@ -103,7 +119,7 @@ def filter_outliers(df,cols, method = 'zscore'):
         Q3 = df[cols].quantile(0.75)
         IQR = Q3 - Q1
         # Filter out outliers
-        df_no_outliers = df[~((df[cols] < (Q1 - 3 * IQR)) | (df[cols] > (Q3 + 3 * IQR))).any(axis=1)]
+        df_no_outliers = df[~((df[cols] < (Q1 - OUTLIER_WIDTH * IQR)) | (df[cols] > (Q3 + OUTLIER_WIDTH * IQR))).any(axis=1)]
         return df_no_outliers
 
     elif method == 'clip':
@@ -116,8 +132,8 @@ def filter_outliers(df,cols, method = 'zscore'):
         IQR = Q3 - Q1
 
         # Define lower and upper bounds for outliers
-        lower_cap = Q1 - 3 * IQR
-        upper_cap = Q3 + 3 * IQR
+        lower_cap = Q1 - OUTLIER_WIDTH * IQR
+        upper_cap = Q3 + OUTLIER_WIDTH * IQR
 
         df[cols] = df[cols].apply(lambda x: x.clip(lower=lower_cap.values[0], upper=upper_cap.values[0]))
         return df
@@ -126,8 +142,6 @@ def filter_outliers(df,cols, method = 'zscore'):
         print('Pass correct method to handle outliers')
 
 # Function to filter the most recent quarters
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def filter_recent_quarters(df):
     try:
@@ -176,24 +190,28 @@ def replace_outliers_with_median(column):
 def perform_regression(df, industry):
 
     global rf_value_coeffs_df, perm_importance_value_coeffs_df, COUNT_MULCOL, COLLINEAR_IND_LIST, VIF_LIST
-    industry_df = filter_recent_quarters(df)
+    industry_df = filter_recent_quarters(df)       # filter last 24 quarters data used for regression
     # industry_df = industry_df[REQ_COLUMNS]
 
-    nrows_industry_df = len(industry_df)
+    nrows_industry_df = len(industry_df)            # number of data points availabe for regression
 
-    industry_df = industry_df.dropna(subset = TARGET)
-    industry_df = industry_df.dropna(subset = METRICS)
+    industry_df = industry_df.dropna(subset = TARGET)     # First Target variable should not be NaN
+    industry_df = industry_df.dropna(subset=METRICS, how='all')    # Then drop rows where all the METRICS are NaN
 
-    # print(f"{industry}: Number of NaN values = {industry_df.isna().sum().sum()}")
+    logging.info(f"{industry}: Number of NaN values before imputation = {industry_df.isna().sum().sum()}")
     if industry_df.isna().sum().sum() > 0:
         if IMPUTATION_METHOD == 'median':
-            industry_df = industry_df.fillna(industry_df.median())
+            industry_df[METRICS] = industry_df[METRICS].apply(lambda x: x.fillna(x.median()), axis=0)
+            logging.info(f"{industry}: Imputed missing values using median.")
         
         elif IMPUTATION_METHOD == 'knn':
             knn_imputer = KNNImputer(n_neighbors=5)
-            industry_df = pd.DataFrame(knn_imputer.fit_transform(industry_df[METRICS]), columns=METRICS)
+            industry_df[METRICS] = pd.DataFrame(knn_imputer.fit_transform(industry_df[METRICS]), columns=METRICS)
+            logging.info(f"{industry}: Imputed missing values using KNN imputer.")
         
-        print(f"Shape after imputing rows: {industry_df.shape}")
+        logging.info(f"{industry}: Shape after imputing rows: {industry_df.shape}")
+    else:
+        logging.info(f"{industry}: No missing values found, skipping imputation.")
 
     if TEST_MULTICOLLINEARITY:
         # if USE_CONDITION_NUMBER:
@@ -218,8 +236,7 @@ def perform_regression(df, industry):
         })
 
         correlated_features = vif_data[vif_data["VIF"] > 5]
-
-        condition_number = cond(industry_df.corr())
+        condition_number = cond(industry_df[METRICS].corr())
         
         vif_data['Industry'] = industry
         vif_data['Condition_No'] = condition_number
@@ -234,7 +251,7 @@ def perform_regression(df, industry):
         # add a column in vif_data named "vif_mulcol", value will be "No" if vif is less than 5 else "Yes"
         vif_data['vif_mulcol'] = np.where(vif_data['VIF'] > 5, 'Yes', 'No')
 
-    if industry_df.shape[0] <= industry_df.shape[1]:
+    if industry_df.shape[0] <= industry_df[METRICS].shape[1]:
         print(f"Not enough data to perform regression for industry: {industry}")
         return
 
@@ -246,7 +263,7 @@ def perform_regression(df, industry):
 
     # Begin Skewness test ====================================================================
     if PERFORM_SKEW_TEST:
-        skewness = industry_df.skew()    # skewness test: 
+        skewness = industry_df[METRICS].skew()    # skewness test: 
 
         '''Interpretation:
             Skewness ≈ 0: Data is roughly symmetric (normal distribution).
@@ -452,24 +469,17 @@ def load_raw_data():
 def main():
     # Load the industry DataFrames
     df_tics_daily, df_marketcap, df_sector, df_funda = load_raw_data()
-
     industry_dfs = df_funda.copy()
-
-    # define formation date
-    formation_date = pd.to_datetime("today")
-
+    
     industry_dfs['date'] = pd.to_datetime(industry_dfs['date'])
-    industry_dfs = industry_dfs[
-        (industry_dfs['date'] > formation_date - pd.DateOffset(years=8)) & 
-        (industry_dfs['date'] < formation_date)
-    ]
+    industry_dfs = industry_dfs[(industry_dfs['date'] > FORMATION_DATE - pd.DateOffset(years=8)) &  (industry_dfs['date'] < FORMATION_DATE)]
 
-    required_columns = ['tic', 'date','Industry'] + REQ_COLUMNS
-    industry_dfs  = industry_dfs [required_columns]
-    industry_dfs  = industry_dfs.dropna()
+    required_columns = ['tic', 'date','Industry'] + REQ_COLUMNS             # required columns
+    industry_dfs  = industry_dfs[required_columns]                          # select required columns
+    industry_dfs  = industry_dfs.dropna()                                   # drop rows where no quarterly data is available
 
     industry_name_list = industry_dfs['Industry'].unique().tolist()
-    industry_name_list = [name for name in industry_name_list if name and name.strip()]
+    industry_name_list = [name for name in industry_name_list if name and name.strip()]    # new list containing only the non-empty, non-whitespace-only strings
     industry_name_list.sort()
 
     # industry_name_list = industry_name_list[:4]
