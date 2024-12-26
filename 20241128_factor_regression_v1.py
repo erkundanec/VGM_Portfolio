@@ -32,7 +32,6 @@ PATH_MARKETCAP_DATA = os.path.join(PATH_DATA, "df_tics_marketcap_russell3000.h5"
 PATH_SECTOR_DATA = os.path.join(PATH_DATA, "df_tics_sector_info_russell3000.h5")
 PATH_FUNDA_DATA = os.path.join(PATH_DATA, "df_tics_funda_russell3000.h5")
 
-
 VALUE_METRICES = ['priceToBookRatio','priceToSalesRatio','priceEarningsRatio', 'dividendYield','enterpriseValueOverEBITDA']
 GROWTH_METRICES = ['revenueGrowth','epsgrowth','freeCashFlowGrowth','returnOnEquity']
 TARGET = ['er']
@@ -494,6 +493,5 @@ def main():
     computation_time(start)
 
 if __name__ == "__main__":
-    
     main()
 
