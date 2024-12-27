@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from sklearn.impute import KNNImputer
 from numpy.linalg import cond
+import argparse
 
 import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='seaborn')
@@ -39,7 +40,15 @@ logging.basicConfig(filename=log_file,
 import matplotlib.pyplot as plt
 plt.rcParams['font.size'] = 14                                      # Change 14 to your preferred size
 
-WHICH_FACTOR = 'growth'                                             # 'value', 'growth', 'profitability'
+
+parser = argparse.ArgumentParser(description='Run factor regression analysis.')
+parser.add_argument('--WHICH_FACTOR', type=str, required=True, help='Specify which factor to use in the analysis.')
+args = parser.parse_args()
+WHICH_FACTOR = args.WHICH_FACTOR
+
+# WHICH_FACTOR = 'value'                                             # 'value', 'growth', 'profitability'
+
+DEBUG = False
 COUNTRY = 'US'
 PATH_DATA = "../FinRecipes/examples/Data_Download/data/Russell3000"
 PATH_DAILY_DATA = os.path.join(PATH_DATA, "df_tics_ohlcv_russell3000.h5")
@@ -75,16 +84,16 @@ elif WHICH_FACTOR == 'growth':
 #     METRICS = ['netProfitMargin','returnOnEquity', 'returnOnAssets']
 #     TARGET = ['er']
 
-RESULTS_DIR = 'Reg_Results/' + WHICH_FACTOR
+TIMESTAMP = time.strftime("%Y%m%d_%H%M")
+RESULTS_DIR = os.path.join('Reg_Results', TIMESTAMP, WHICH_FACTOR)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 TEST_MULTICOLLINEARITY = True
-
-PERFORM_SKEW_TEST = True
+PERFORM_SKEW_TEST = False
 PERFORM_REGRESSION = True
 FILTER_OUTLIERS_METRICS = True
 FILTER_OUTLIERS_TARGET = True
-SAVE_PLOTS = True
+SAVE_PLOTS = False
 SAVE_EXCEL = False
 USE_PERMUTATION_IMPORTANCE = True
 COLLINEAR_IND_LIST = []
@@ -100,49 +109,67 @@ FORMATION_DATE = pd.to_datetime("today").normalize()
 
 REQ_COLUMNS = METRICS + TARGET
 
-def filter_outliers(df,cols, method = 'zscore'):
-    df = df.copy()
-
-    if method == 'zscore':
-        # # Calculate Z-scores for the selected financial ratios
-        # z_scores = df.apply(zscore)
-
-        # # Filter out data points with absolute Z-score greater than a threshold (e.g., 3)
-        # df_no_outliers = df[(z_scores < 3).all(axis=1)]
-
-        zscores = np.abs(df[cols].apply(lambda x: (x - x.mean()) / x.std()))
-        df_no_outliers = df[(zscores < 3).all(axis=1)]
-        return df_no_outliers
-
-    elif method == 'IQR':
-        Q1 = df[cols].quantile(0.25)
-        Q3 = df[cols].quantile(0.75)
-        IQR = Q3 - Q1
-        # Filter out outliers
-        df_no_outliers = df[~((df[cols] < (Q1 - OUTLIER_WIDTH * IQR)) | (df[cols] > (Q3 + OUTLIER_WIDTH * IQR))).any(axis=1)]
-        return df_no_outliers
-
-    elif method == 'clip':
-        # Cap values to the 95th percentile
-        # upper_cap = industry_df[cols].quantile(0.95)
-        # lower_cap = industry_df[cols].quantile(0.05)
-
-        Q1 = df[cols].quantile(0.25)
-        Q3 = df[cols].quantile(0.75)
-        IQR = Q3 - Q1
-
-        # Define lower and upper bounds for outliers
-        lower_cap = Q1 - OUTLIER_WIDTH * IQR
-        upper_cap = Q3 + OUTLIER_WIDTH * IQR
-
-        df[cols] = df[cols].apply(lambda x: x.clip(lower=lower_cap.values[0], upper=upper_cap.values[0]))
-        return df
-
-    else:
-        print('Pass correct method to handle outliers')
+def filter_outliers(df: pd.DataFrame, cols: list, method: str = 'zscore') -> pd.DataFrame:
+    """
+    Filter or clip outliers from specified columns using various statistical methods.
+    
+    Args:
+        df (pd.DataFrame): Input DataFrame containing the data.
+        cols (list): List of column names to process for outliers.
+        method (str): Method to handle outliers. Options: 'zscore', 'IQR', 'clip'.
+    
+    Returns:
+        pd.DataFrame: DataFrame with outliers handled according to specified method.
+    
+    Raises:
+        ValueError: If invalid method is specified or input validation fails.
+    """
+    try:
+        logging.info(f"Starting outlier filtering using {method} method")
+        
+        # Input validation
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Input 'df' must be a pandas DataFrame")
+        if not all(col in df.columns for col in cols):
+            raise ValueError("Some specified columns not found in DataFrame")
+        if method not in ['zscore', 'IQR', 'clip']:
+            raise ValueError("Method must be one of: 'zscore', 'IQR', 'clip'")
+            
+        # Create a copy to avoid modifying original data
+        df_processed = df.copy()
+        initial_rows = len(df_processed)
+        
+        if method == 'zscore':
+            zscores = np.abs(df_processed[cols].apply(lambda x: (x - x.mean()) / x.std()))
+            df_processed = df_processed[(zscores < 3).all(axis=1)]
+            
+        elif method == 'IQR':
+            Q1 = df_processed[cols].quantile(0.25)
+            Q3 = df_processed[cols].quantile(0.75)
+            IQR = Q3 - Q1
+            mask = ~((df_processed[cols] < (Q1 - OUTLIER_WIDTH * IQR)) | 
+                    (df_processed[cols] > (Q3 + OUTLIER_WIDTH * IQR))).any(axis=1)
+            df_processed = df_processed[mask]
+            
+        elif method == 'clip':
+            Q1 = df_processed[cols].quantile(0.25)
+            Q3 = df_processed[cols].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_cap = Q1 - OUTLIER_WIDTH * IQR
+            upper_cap = Q3 + OUTLIER_WIDTH * IQR
+            df_processed[cols] = df_processed[cols].clip(lower=lower_cap, upper=upper_cap, axis=1)
+        
+        rows_removed = initial_rows - len(df_processed)
+        logging.info(f"Outlier filtering complete. Rows affected: {rows_removed}")
+        logging.info(f"Remaining data points: {len(df_processed)}")
+        
+        return df_processed
+        
+    except Exception as e:
+        logging.error(f"Error in outlier filtering: {str(e)}")
+        raise
 
 # Function to filter the most recent quarters
-
 def filter_recent_quarters(df):
     try:
         logging.info("Starting to filter recent {NUM_QUARTERS} quarters.")
@@ -213,19 +240,18 @@ def perform_regression(df, industry):
     else:
         logging.info(f"{industry}: No missing values found, skipping imputation.")
 
-    if TEST_MULTICOLLINEARITY:
-        # if USE_CONDITION_NUMBER:
-        #     # Calculate the condition number
-        #     condition_number = cond(industry_df.corr())
-        #     if condition_number < 30:
-        #         print(f"{industry}: No serious muliticollinearity")
-                
-        #     else:
-        #         print(f"{industry}: Serious muliticollinearity")
-        #         COUNT_MULCOL = COUNT_MULCOL + 1
-        #         COLLINEAR_IND_LIST.append(industry)
-        #         # return
+    # Initialize vif_data with basic information
+    vif_data = pd.DataFrame({
+        "Feature": METRICS,
+        "Industry": industry,
+        "VIF": [0] * len(METRICS),
+        "vif_mulcol": ["No"] * len(METRICS),
+        "Condition_No": 0,
+        "No_obs_with_nan": nrows_industry_df,
+        "No_obs": len(industry_df)
+    })
 
+    if TEST_MULTICOLLINEARITY:
         formula = "0 + " + " + ".join(METRICS)              # '0 +' excludes intercept in dmatrix
         X = dmatrix(formula, industry_df)       # Create the design matrix
         
@@ -325,7 +351,7 @@ def perform_regression(df, industry):
 
     # y = industry_df_imputed['er']
 
-    if PERFORM_REGRESSION == True:
+    if PERFORM_REGRESSION:
         
         rf = RandomForestRegressor(random_state=42)
         # param_grid = {
@@ -391,20 +417,20 @@ def perform_regression(df, industry):
             # for feature, imp in zip(X_value_transformed.columns, perm_importance_value.importances_mean):
             #     print(f"{feature}: {imp:.4f}")
 
-
-        # Residual Analysis
-        residual_plot_filename = os.path.join(RESULTS_DIR, f"{industry}_residual_plot.png")
-        y_pred_value = rf_best_value.predict(X_value_transformed)
-        residuals_value = y - y_pred_value
-        plt.figure(figsize=(6, 6))
-        plt.scatter(y_pred_value, residuals_value, alpha=0.5)
-        plt.axhline(0, color='red', linestyle='--')
-        plt.xlabel('Predicted Values')
-        plt.ylabel('Residuals')
-        plt.title(f'Residual plot for {industry}')
-        plt.tight_layout()
-        plt.savefig(residual_plot_filename)
-        plt.close()
+        if SAVE_PLOTS:
+            # Residual Analysis
+            residual_plot_filename = os.path.join(RESULTS_DIR, f"{industry}_residual_plot.png")
+            y_pred_value = rf_best_value.predict(X_value_transformed)
+            residuals_value = y - y_pred_value
+            plt.figure(figsize=(6, 6))
+            plt.scatter(y_pred_value, residuals_value, alpha=0.5)
+            plt.axhline(0, color='red', linestyle='--')
+            plt.xlabel('Predicted Values')
+            plt.ylabel('Residuals')
+            plt.title(f'Residual plot for {industry}')
+            plt.tight_layout()
+            plt.savefig(residual_plot_filename)
+            plt.close()
 
         # # Plot for Growth Metrics
         # y_pred_growth = rf_best_growth.predict(X_growth_transformed)
@@ -421,59 +447,68 @@ def perform_regression(df, industry):
         # plt.show()
 
 def load_raw_data():
-    # Load raw data from the local directory
-    df_tics_daily = pd.read_hdf(PATH_DAILY_DATA)
-    df_marketcap = pd.read_hdf(PATH_MARKETCAP_DATA)
-    df_sector = pd.read_hdf(PATH_SECTOR_DATA)
-    df_funda = pd.read_hdf(PATH_FUNDA_DATA)
-
-    df_sector = df_sector.rename(columns= {'Ticker': 'tic'})
-    df_funda = df_funda.loc[:, ~df_funda.columns.duplicated()]
-
-    if {'incomeBeforeTax', 'totalAssets'}.issubset(df_funda.columns):
-        mask = (df_funda['totalAssets'].notna() & (df_funda['totalAssets'] != 0))
-        df_funda.loc[mask, 'er'] = np.divide(
-            df_funda.loc[mask, 'incomeBeforeTax'],
-            df_funda.loc[mask, 'totalAssets']
-        )
-
-    df_sector_slim = df_sector[['tic', 'Sector', 'Industry']].copy()
-    df_funda = pd.merge(df_funda,df_sector_slim, on='tic',how='inner')
-
-    if 'releaseDate' in df_funda.columns:
-        if 'date' in df_funda.columns:
-            df_funda = df_funda.drop(columns=['date'])
+    try:
+        logging.info("Loading raw data from local directory.")
         
-        # Handle release dates
-        mask = df_funda['releaseDate'].notna()
-        df_funda.loc[mask, 'releaseDate'] = pd.to_datetime(df_funda.loc[mask, 'releaseDate'])
+        df_tics_daily = pd.read_hdf(PATH_DAILY_DATA)
+        df_marketcap = pd.read_hdf(PATH_MARKETCAP_DATA)
+        df_sector = pd.read_hdf(PATH_SECTOR_DATA)
+        df_funda = pd.read_hdf(PATH_FUNDA_DATA)
         
-        # Handle AMC dates
-        df_funda['time'] = df_funda['time'].fillna('amc')
-        amc_mask = df_funda['time'].str.contains('amc', case=False, na=False)
-        df_funda.loc[amc_mask, 'releaseDate'] += pd.Timedelta(days=1)
+        logging.info("Raw data loaded successfully.")
         
-        # Rename to standard column
-        df_funda = df_funda.rename(columns={'releaseDate': 'date'})
+        df_sector = df_sector.rename(columns={'Ticker': 'tic'})
+        df_funda = df_funda.loc[:, ~df_funda.columns.duplicated()]
+        
+        if {'incomeBeforeTax', 'totalAssets'}.issubset(df_funda.columns):
+            mask = (df_funda['totalAssets'].notna() & (df_funda['totalAssets'] != 0))
+            df_funda.loc[mask, 'er'] = np.divide(
+                df_funda.loc[mask, 'incomeBeforeTax'],
+                df_funda.loc[mask, 'totalAssets']
+            )
+            logging.info("Calculated 'er' for non-null and non-zero 'totalAssets'.")
+        
+        df_sector_slim = df_sector[['tic', 'Sector', 'Industry']].copy()
+        df_funda = pd.merge(df_funda, df_sector_slim, on='tic', how='inner')
+        logging.info("Merged sector information into fundamental data.")
+        
+        if 'releaseDate' in df_funda.columns:
+            if 'date' in df_funda.columns:
+                df_funda = df_funda.drop(columns=['date'])
+                logging.info("Dropped existing 'date' column from fundamental data.")
+            
+            mask = df_funda['releaseDate'].notna()
+            df_funda.loc[mask, 'releaseDate'] = pd.to_datetime(df_funda.loc[mask, 'releaseDate'])
+            df_funda['time'] = df_funda['time'].fillna('amc')
+            amc_mask = df_funda['time'].str.contains('amc', case=False, na=False)
+            df_funda.loc[amc_mask, 'releaseDate'] += pd.Timedelta(days=1)
+            df_funda = df_funda.rename(columns={'releaseDate': 'date'})
+            logging.info("Processed 'releaseDate' and renamed to 'date'.")
+        
+        n_years_ago = FORMATION_DATE - pd.DateOffset(years=8)
+        date_mask = (df_funda['date'].dt.date.between(n_years_ago.date(), FORMATION_DATE.date()))
+        df_funda = df_funda.loc[date_mask]
+        logging.info("Filtered fundamental data for the last 8 years.")
 
-    current_date = pd.Timestamp.now().date()
-    n_years_ago = current_date - pd.DateOffset(years=8)
-    date_mask = (df_funda['date'].dt.date.between(n_years_ago.date(), current_date))
-    df_funda = df_funda.loc[date_mask]
+        # filter df_tics_daily for the last 8 years
+        df_tics_daily['date'] = pd.to_datetime(df_tics_daily['date'])
+        df_tics_daily = df_tics_daily[df_tics_daily['date'].dt.date.between(n_years_ago.date(), FORMATION_DATE.date())]
+        logging.info("Filtered daily data for the last 8 years.")
+
+        df_marketcap['date'] = pd.to_datetime(df_marketcap['date'])
+        logging.info("Converted 'date' column in market cap data to datetime format.")
+        
+        return df_tics_daily, df_marketcap, df_sector, df_funda
     
-    # Convert 'date' column to datetime format
-    df_marketcap['date'] = pd.to_datetime(df_marketcap['date'])
-
-    return df_tics_daily, df_marketcap, df_sector, df_funda
+    except Exception as e:
+        logging.error(f"Error occurred while loading raw data: {e}")
+        raise
 
 def main():
     # Load the industry DataFrames
     df_tics_daily, df_marketcap, df_sector, df_funda = load_raw_data()
     industry_dfs = df_funda.copy()
     
-    industry_dfs['date'] = pd.to_datetime(industry_dfs['date'])
-    industry_dfs = industry_dfs[(industry_dfs['date'] > FORMATION_DATE - pd.DateOffset(years=8)) &  (industry_dfs['date'] < FORMATION_DATE)]
-
     required_columns = ['tic', 'date','Industry'] + REQ_COLUMNS             # required columns
     industry_dfs  = industry_dfs[required_columns]                          # select required columns
     industry_dfs  = industry_dfs.dropna()                                   # drop rows where no quarterly data is available
@@ -482,7 +517,8 @@ def main():
     industry_name_list = [name for name in industry_name_list if name and name.strip()]    # new list containing only the non-empty, non-whitespace-only strings
     industry_name_list.sort()
 
-    # industry_name_list = industry_name_list[:4]
+    if DEBUG:
+        industry_name_list = industry_name_list[:4]
 
     for industry in industry_name_list:
         df = industry_dfs[industry_dfs['Industry'] == industry]
@@ -498,32 +534,57 @@ def main():
     vif_filename = os.path.join(RESULTS_DIR, f"{WHICH_FACTOR}_Industry_Multicollinearity.xlsx")
     df_multicollinearity.to_excel(vif_filename, index = False)
 
-    # count df_multicollinearity with "vif_mulcol" == "Yes" and "reg_model_eval" == "bad" in COUNT_MULCOL and COUNT_BAD_REG_MODEL 
-    COUNT_MULCOL = df_multicollinearity[df_multicollinearity['vif_mulcol'] == 'Yes'].shape[0]
-    COUNT_BAD_REG_MODEL = df_multicollinearity[df_multicollinearity['reg_model_eval'] == 'bad'].shape[0]
+    # Count and get lists of industries with multicollinearity and bad regression models
+    mulcol_industries = df_multicollinearity[df_multicollinearity['vif_mulcol'] == 'Yes']['Industry'].unique()
+    bad_reg_industries = df_multicollinearity[df_multicollinearity['reg_model_eval'] == 'bad']['Industry'].unique()
+    
+    COUNT_MULCOL = len(mulcol_industries)
+    COUNT_BAD_REG_MODEL = len(bad_reg_industries)
 
+    # Write statistics and lists to text file
+    stats_filename = os.path.join(RESULTS_DIR, f"{WHICH_FACTOR}_regression_stats.txt")
+    with open(stats_filename, 'w') as f:
+        f.write(f"Total number of industries: {len(industry_name_list)}\n")
+        f.write(f"Number of non-collinear industries: {COUNT_MULCOL}\n") 
+        f.write(f"Number of industries with bad regression model: {COUNT_BAD_REG_MODEL}\n\n")
+        
+        f.write("Industries with multicollinearity:\n")
+        for ind in sorted(mulcol_industries):
+            f.write(f"- {ind}\n")
+            
+        f.write("\nIndustries with bad regression models:\n")
+        for ind in sorted(bad_reg_industries):
+            f.write(f"- {ind}\n")
+
+    # # Write statistics to a text file
+    # stats_filename = os.path.join(RESULTS_DIR, f"{WHICH_FACTOR}_regression_stats.txt")
+    # with open(stats_filename, 'w') as f:
+    #     f.write(f"Total number of industries: {len(industry_name_list)}\n")
+    #     f.write(f"Number of non-collinear industries: {COUNT_MULCOL}\n") 
+    #     f.write(f"Number of industries with bad regression model: {COUNT_BAD_REG_MODEL}\n")
+    
+    # Also print to console
     print(f"Total no. of industry: {len(industry_name_list)}, \
                 \n Number of non-collinear industry: {COUNT_MULCOL} \
                 \n Number of industry with bad regression model: {COUNT_BAD_REG_MODEL}")
 
     coeff_filename = os.path.join(RESULTS_DIR, f"rf_{WHICH_FACTOR}_coeffs_df.xlsx")
-    rf_value_coeffs_df.to_excel(coeff_filename)
+    rf_value_coeffs_df.transpose().to_excel(coeff_filename)
 
     # make a copy of the rf_value_coeffs_df to eq_rf_value_coeffs_df and assign equal weight in each column for each industry
     eq_rf_value_coeffs_df = rf_value_coeffs_df.copy()
     num_feature = len(eq_rf_value_coeffs_df.index)
 
-    # Assign 1/number of columns to each cell in the dataframe
+    # Assign 1/number of columns to each cell in the dataframe 
     eq_rf_value_coeffs_df = eq_rf_value_coeffs_df.map(lambda x: 1/num_feature)
 
-    # eq_rf_value_coeffs_df = 1/len(eq_rf_value_coeffs_df.index)
-    # eq_rf_value_coeffs_df = eq_rf_value_coeffs_df.fillna(0)
-    # save the eq_rf_value_coeffs_df to excel
+    # save the transposed eq_rf_value_coeffs_df to excel
     coeff_filename_eq = os.path.join(RESULTS_DIR, f"eq_rf_{WHICH_FACTOR}_coeffs_df.xlsx")
-    eq_rf_value_coeffs_df.to_excel(coeff_filename_eq)
+    eq_rf_value_coeffs_df.transpose().to_excel(coeff_filename_eq)
 
     coeff_filename_perm = os.path.join(RESULTS_DIR, f"perm_importance_{WHICH_FACTOR}_coeffs_df.xlsx")
-    perm_importance_value_coeffs_df.to_excel(coeff_filename_perm)
+    perm_importance_value_coeffs_df.transpose().to_excel(coeff_filename_perm)
+    
 
     computation_time(start)
 

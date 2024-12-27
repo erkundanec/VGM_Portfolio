@@ -1,0 +1,25 @@
+Total number of industries: 140
+Number of non-collinear industries: 17
+Number of industries with bad regression model: 1
+
+Industries with multicollinearity:
+- Agricultural - Machinery
+- Banks - Diversified
+- Chemicals
+- Construction Materials
+- Grocery Stores
+- Hardware, Equipment & Parts
+- Medical - Care Facilities
+- Oil & Gas Drilling
+- Packaged Foods
+- Packaging & Containers
+- REIT - Retail
+- Regulated Electric
+- Regulated Water
+- Rental & Leasing Services
+- Residential Construction
+- Technology Distributors
+- Trucking
+
+Industries with bad regression models:
+- Oil & Gas Drilling

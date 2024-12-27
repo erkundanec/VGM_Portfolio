@@ -46,7 +46,6 @@ import pickle
 import statistics
 import pdb
 
-
 import empyrical as ep
 
 # ==================   Import libraries for plotting   ========================
@@ -72,9 +71,9 @@ start_time = time.time()
 #                 'operatingIncomeGrowth','freeCashFlowGrowth','assetGrowth','netProfitMargin','returnOnAssets','returnOnEquity',
 #                 'returnOnCapitalEmployed','operatingProfitMargin','assetTurnover','inventoryTurnover','receivablesTurnover',
 #                 'payablesTurnover','currentRatio','quickRatio','cashRatio','workingCapital','interestCoverage',]
-    
-GROUP1_FACTORS = ['priceToBookRatio','priceEarningsRatio','enterpriseValueOverEBITDA']
-GROUP2_FACTORS = ['priceToSalesRatio']
+
+GROUP1_FACTORS = ['priceToSalesRatio']       # Values are positive and lower value is preferable
+GROUP2_FACTORS = ['priceToBookRatio','priceEarningsRatio','enterpriseValueOverEBITDA']    # Values can be negative and lower value is preferable 
 GROUP3_FACTORS = ['dividendYield','revenueGrowth','epsgrowth','freeCashFlowGrowth']
 GROUP4_FACTORS = ['returnOnEquity']
 GROUP5_FACTORS = []
@@ -3237,7 +3236,6 @@ def main():
     validate_combination(RATING_OR_SCORE, VGM_METHOD)     # Validate the combination of rating_or_score and vgm_method
     df_tics_daily, df_marketcap, df_sector, df_funda = load_raw_data()                                       # Load raw data from the local directory
     logging.info(f'OHLCV and Marketcap data are loaded from local directory.')
-
 
     # find the count of tickers in df_tics_daily and df_marketcap. And cound the common ticker in both the dataframes.
     if PRINT_FLAG:
