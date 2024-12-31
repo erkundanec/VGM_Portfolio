@@ -74,11 +74,21 @@ start_time = time.time()
 #                 'returnOnCapitalEmployed','operatingProfitMargin','assetTurnover','inventoryTurnover','receivablesTurnover',
 #                 'payablesTurnover','currentRatio','quickRatio','cashRatio','workingCapital','interestCoverage',]
 
-GROUP1_FACTORS = ['priceToSalesRatio']       # Values are positive and lower value is preferable
-GROUP2_FACTORS = ['priceToBookRatio','priceEarningsRatio','enterpriseValueOverEBITDA']    # Values can be negative and lower value is preferable 
+# GROUP1_FACTORS = ['priceToSalesRatio']                                                    # Values are positive and lower value is preferable
+# GROUP2_FACTORS = ['priceToBookRatio','priceEarningsRatio','enterpriseValueOverEBITDA']    # Values can be negative and lower value is preferable 
+# GROUP3_FACTORS = ['dividendYield','revenueGrowth','epsgrowth','freeCashFlowGrowth']
+# GROUP4_FACTORS = ['returnOnEquity']
+# GROUP5_FACTORS = []
+
+# 'Price-to-Free-Cash-Flow_Ratio', 'Operating_Income_Growth', 'Asset_Growth', 'ROCE'
+
+GROUP1_FACTORS = ['priceToSalesRatio'] + ['operatingIncomeGrowth','assetGrowth']                                                    # Values are positive and lower value is preferable
+GROUP2_FACTORS = ['priceToBookRatio','priceEarningsRatio','enterpriseValueOverEBITDA'] + ['priceToFreeCashFlowsRatio']    # Values can be negative and lower value is preferable 
 GROUP3_FACTORS = ['dividendYield','revenueGrowth','epsgrowth','freeCashFlowGrowth']
-GROUP4_FACTORS = ['returnOnEquity']
+GROUP4_FACTORS = ['returnOnEquity'] + ['freeCashFlowYield','returnOnCapitalEmployed']
 GROUP5_FACTORS = []
+
+FACTOR_RATING_LIST = GROUP1_FACTORS + GROUP2_FACTORS + GROUP3_FACTORS + GROUP4_FACTORS + GROUP5_FACTORS
 
 VALUE_METRICES = ['priceToBookRatio','priceToSalesRatio','priceEarningsRatio', 'dividendYield','enterpriseValueOverEBITDA']
 GROWTH_METRICES = ['revenueGrowth','epsgrowth','freeCashFlowGrowth','returnOnEquity']
@@ -1628,6 +1638,8 @@ def normalize_column(column):
 
 def compute_value_growth_score_US(df_funda, df_sector, formation_date, value_coeff, growth_coeff):
     industry_dfs = df_funda.copy()
+    industry_dfs = industry_dfs[['tic', 'date','Industry','Sector'] + FACTOR_RATING_LIST]
+
     # industry_dfs['date'] = pd.to_datetime(industry_dfs['date'])
     industry_dfs = industry_dfs[(industry_dfs['date'] > formation_date - timedelta(days=365)) & (industry_dfs['date'] < formation_date)]
 
@@ -1647,13 +1659,20 @@ def compute_value_growth_score_US(df_funda, df_sector, formation_date, value_coe
 
         if industry == 'REIT - Hotel & Motel':
             continue
+        
 
         latest_data = df.sort_values(by='date', ascending=False).groupby('tic').first().reset_index()
-        required_columns = ['tic', 'date'] + VALUE_METRICES + GROWTH_METRICES
+
+        # dropna for selected columns
+        # latest_data = latest_data.dropna(subset=VALUE_METRICES + GROWTH_METRICES,how='all').reset_index(drop=True)    # missing values (NaNs) in all of the columns specified   
+        latest_data = latest_data.dropna(subset=VALUE_METRICES + GROWTH_METRICES).reset_index(drop=True)    # missing values (NaNs) in any of the columns specified
+        latest_data.drop(columns=['Industry','Sector'], inplace=True)
+        # required_columns = ['tic', 'date'] + VALUE_METRICES + GROWTH_METRICES
+        # required_columns = ['tic', 'date'] + FACTOR_RATING_LIST
         # logging.info(f"Columns in required for V and G scores = {required_columns}")
         
-        latest_data = latest_data[required_columns]
-        latest_data = latest_data.dropna()
+        # latest_data = latest_data[required_columns]
+        
 
         if (len(latest_data['tic'].unique()) >= 7):
             # df['date'] = pd.to_datetime(df['date'])
@@ -1746,7 +1765,7 @@ def compute_value_growth_score_US(df_funda, df_sector, formation_date, value_coe
             logging.info(f"Industry: {industry}, Number of tickers: {len(df['tic'].unique())}, Data Shape: {df.shape}")
 
 
-    df_industry_scores = df_industry_scores.drop_duplicates(subset='tic', keep='first')
+    # df_industry_scores = df_industry_scores.drop_duplicates(subset='tic', keep='first')
 
     return df_industry_scores
 
@@ -1993,28 +2012,28 @@ def compute_vgm_score(df_tics_daily, formation_date, tickers_list, df_rank_marke
         df_vgm_score = pd.merge(df_vgm_score, df_rank_marketcap, on='tic', how='left')
 
         if VGM_METHOD == 'value':
-            df_vgm_score= df_vgm_score.sort_values(by=['value_score_rank','marketcap'], ascending=False)
+            df_vgm_score= df_vgm_score.sort_values(by=['value_score_rank','marketCap'], ascending=False)
 
         elif VGM_METHOD == 'growth':
-            df_vgm_score= df_vgm_score.sort_values(by=['growth_score_rank','marketcap'], ascending=False)
+            df_vgm_score= df_vgm_score.sort_values(by=['growth_score_rank','marketCap'], ascending=False)
         
         elif VGM_METHOD == 'value-mom':
-            df_vgm_score= df_vgm_score.sort_values(by=['value_score_rank','momentum_score_rank','marketcap'], ascending=False)
+            df_vgm_score= df_vgm_score.sort_values(by=['value_score_rank','momentum_score_rank','marketCap'], ascending=False)
 
         elif VGM_METHOD == 'growth-mom':
-            df_vgm_score = df_vgm_score.sort_values(by=['growth_score_rank','momentum_score_rank','marketcap'], ascending=False)
+            df_vgm_score = df_vgm_score.sort_values(by=['growth_score_rank','momentum_score_rank','marketCap'], ascending=False)
 
         elif VGM_METHOD == 'mom-value':
-            df_vgm_score= df_vgm_score.sort_values(by=['momentum_score_rank','value_score_rank','marketcap'], ascending=False)
+            df_vgm_score= df_vgm_score.sort_values(by=['momentum_score_rank','value_score_rank','marketCap'], ascending=False)
 
         elif VGM_METHOD == 'mom-growth':
-            df_vgm_score = df_vgm_score.sort_values(by=['momentum_score_rank','growth_score_rank','marketcap'], ascending=False)
+            df_vgm_score = df_vgm_score.sort_values(by=['momentum_score_rank','growth_score_rank','marketCap'], ascending=False)
         
         elif VGM_METHOD == 'growth-value-mom':
-            df_vgm_score = df_vgm_score.sort_values(by=['growth_score_rank','value_score_rank','momentum_score_rank','marketcap'], ascending=False)
+            df_vgm_score = df_vgm_score.sort_values(by=['growth_score_rank','value_score_rank','momentum_score_rank','marketCap'], ascending=False)
         
         elif VGM_METHOD == 'growth-value':
-            df_vgm_score = df_vgm_score.sort_values(by=['growth_score_rank','value_score_rank','marketcap'], ascending=False)
+            df_vgm_score = df_vgm_score.sort_values(by=['growth_score_rank','value_score_rank','marketCap'], ascending=False)
         
         else:
             return None
@@ -2838,7 +2857,7 @@ def production_vgm_score_IN():
     
     df_vgm_score1 = pd.merge(df_vgm_score, df_fullname,  left_on='tic', right_on='SYMBOL', how='left')
     df_vgm_score1 = df_vgm_score1[['tic','Name_of_Company','vgm_score_rank', 'value_score_rank',
-                            'growth_score_rank','momentum_score_rank','risk_score_rank','sector','industry','marketcap']
+                            'growth_score_rank','momentum_score_rank','risk_score_rank','sector','industry','marketCap']
                             + value_factors_list + growth_factors_list + global_momentum_list + local_momentum_list]
     
     df_vgm_score1 = pd.merge(df_vgm_score1, df_metrics,  left_on='tic', right_on='Symbol', how='left')
@@ -2869,7 +2888,7 @@ def production_vgm_score_IN():
                                     '6M_Return',
                                     'YTD_Performance',
                                     '1Y_Return',
-                                    'marketcap',
+                                    'marketCap',
                                     'Last_Available_Date'] + value_factors_list + growth_factors_list + global_momentum_list + local_momentum_list]
 
     df_vgm_score1 = df_vgm_score1.rename(columns={'vgm_score_rank':'VGM_Ratings',
@@ -2880,7 +2899,7 @@ def production_vgm_score_IN():
                                 'sector':'Sector',
                                 'industry':'Industry',
                                 'Company':'Name_of_Company',
-                                'marketcap': 'Marketcap',
+                                'marketCap': 'Marketcap',
                                 'momentum_3_rank': 'Short_Term_Momentum',
                                 'momentum_6_rank': 'Medium_Term_Momentum',
                                 'momentum_12_rank':'Long_Term_Momentum',
@@ -2897,6 +2916,13 @@ def production_vgm_score_IN():
     df_vgm_score1['Medium_Term_Industry_Momentum'] = df_vgm_score1['Medium_Term_Industry_Momentum'].astype(float)/2
     df_vgm_score1['Long_Term_Industry_Momentum'] = df_vgm_score1['Long_Term_Industry_Momentum'].astype(float)/2
 
+
+    factor_metrics = ['PB_Ratio','PS_Ratio',	'PE_Ratio',	'Dividend_Yield',
+                    	'Price-to-Free-Cash-Flow_Ratio','FCF_Yield','EV-to-EBITDA','Revenue_Growth',
+                        	'EPS_Growth','Operating_Income_Growth','FCF_Growth','Asset_Growth','ROE','ROCE']
+    df_vgm_score1[factor_metrics] = df_vgm_score1[factor_metrics].astype(float)/2
+
+
     def round_dataframe_columns(df,columns_to_round):
         df[columns_to_round] = df[columns_to_round].round(2)
         return df
@@ -2909,38 +2935,38 @@ def production_vgm_score_IN():
     df_vgm_score1['Last_Available_Date'] = df_vgm_score1['Last_Available_Date'].dt.date
     df_vgm_score1.to_excel(EXP_DIR + 'df_vgm_score' + '_' + FORMATION_DATE.strftime("%Y-%m-%d") + '_IN.xlsx', index = False)
 
-def production_vgm_score_US(df_vgm_score,df_sector,df_marketcap):
+def production_vgm_score_US(df_vgm_score,df_metrics,df_sector,df_marketcap):
     rename_dict = {
-                'priceToBookRatio_rank': 'PB_Ratio',
-                'priceToSalesRatio_rank': 'PS_Ratio',
-                'priceEarningsRatio_rank': 'PE_Ratio',
-                'priceToFreeCashFlowsRatio_rank': 'Price-to-Free-Cash-Flow_Ratio',
-                'enterpriseValueOverEBITDA_rank': 'EV-to-EBITDA',
-                'cashConversionCycle_rank': 'Cash Conversion Cycle',
-                'debtToEquity_rank': 'Debt-to-Equity',
-                'debtToAssets_rank': 'Debt-to-Asset',
-                'netDebtToEBITDA_rank': 'Net-Debt-to-EBITDA',
-                'dividendYield_rank': 'Dividend_Yield',
-                'freeCashFlowYield_rank': 'FCF_Yield',
-                'revenueGrowth_rank': 'Revenue_Growth',
-                'epsgrowth_rank': 'EPS_Growth',
-                'operatingIncomeGrowth_rank': 'Operating_Income_Growth',
-                'freeCashFlowGrowth_rank': 'FCF_Growth',
-                'assetGrowth_rank': 'Asset_Growth',
-                'netProfitMargin_rank': 'Net_Profit_Margin',
-                'returnOnAssets_rank': 'ROA',
-                'returnOnEquity_rank': 'ROE',
-                'returnOnCapitalEmployed_rank': 'ROCE',
-                'operatingProfitMargin_rank': 'Operating_Profit_Margin',
-                'assetTurnover_rank': 'Asset_Turnover',
-                'inventoryTurnover_rank': 'Inventory_Turnover',
-                'receivablesTurnover_rank': 'Receivables_Turnover',
-                'payablesTurnover_rank': 'Payables_Turnover',
-                'currentRatio_rank': 'Current_Ratio',
-                'quickRatio_rank': 'Quick_Ratio',
-                'cashRatio_rank': 'Cash_Ratio',
-                'workingCapital_rank': 'Working_Capital',
-                'interestCoverage_rank': 'Interest _Coverage_Ratio'
+                'priceToBookRatio': 'PB_Ratio',
+                'priceToSalesRatio': 'PS_Ratio',
+                'priceEarningsRatio': 'PE_Ratio',
+                'priceToFreeCashFlowsRatio': 'Price-to-Free-Cash-Flow_Ratio',
+                'enterpriseValueOverEBITDA': 'EV-to-EBITDA',
+                'cashConversionCycle': 'Cash Conversion Cycle',
+                'debtToEquity': 'Debt-to-Equity',
+                'debtToAssets': 'Debt-to-Asset',
+                'netDebtToEBITDA': 'Net-Debt-to-EBITDA',
+                'dividendYield': 'Dividend_Yield',
+                'freeCashFlowYield': 'FCF_Yield',
+                'revenueGrowth': 'Revenue_Growth',
+                'epsgrowth': 'EPS_Growth',
+                'operatingIncomeGrowth': 'Operating_Income_Growth',
+                'freeCashFlowGrowth': 'FCF_Growth',
+                'assetGrowth': 'Asset_Growth',
+                'netProfitMargin': 'Net_Profit_Margin',
+                'returnOnAssets': 'ROA',
+                'returnOnEquity': 'ROE',
+                'returnOnCapitalEmployed': 'ROCE',
+                'operatingProfitMargin': 'Operating_Profit_Margin',
+                'assetTurnover': 'Asset_Turnover',
+                'inventoryTurnover': 'Inventory_Turnover',
+                'receivablesTurnover': 'Receivables_Turnover',
+                'payablesTurnover': 'Payables_Turnover',
+                'currentRatio': 'Current_Ratio',
+                'quickRatio': 'Quick_Ratio',
+                'cashRatio': 'Cash_Ratio',
+                'workingCapital': 'Working_Capital',
+                'interestCoverage': 'Interest _Coverage_Ratio'
         }
 
     # Rename columns in the dataframe
@@ -2957,9 +2983,11 @@ def production_vgm_score_US(df_vgm_score,df_sector,df_marketcap):
     # Rename dictionary for CAT1_RATIOS and CAT2_RATIOS
     
     # df_fullname = pd.read_excel(PATH_DATA + '/russell_3000_gurufocus_10-18-2024.xlsx')
-    df_vgm_score1 = pd.merge(df_vgm_score, df_sector,  left_on='tic', right_on='Ticker', how='left')
+    df_sector = df_sector.rename(columns={'Name': 'Company'})
+    df_vgm_score1 = pd.merge(df_vgm_score, df_sector,  on = 'tic', how='left')
+
     df_vgm_score1 = df_vgm_score1[['tic','Company','vgm_score_rank', 'value_score_rank','growth_score_rank','momentum_score_rank',
-                                        'risk_score_rank','sector','industry','marketcap'] 
+                                        'risk_score_rank','sector','industry','marketCap'] 
                                         + value_factors_list + growth_factors_list + global_momentum_list + local_momentum_list]
     
     df_vgm_score1 = pd.merge(df_vgm_score1, df_metrics,  left_on='tic', right_on='Symbol', how='left')
@@ -2994,7 +3022,7 @@ def production_vgm_score_US(df_vgm_score,df_sector,df_marketcap):
                                     '6M_Return',
                                     'YTD_Performance',
                                     '1Y_Return',
-                                    'marketcap'] + value_factors_list + growth_factors_list + global_momentum_list + local_momentum_list]
+                                    'marketCap'] + value_factors_list + growth_factors_list + global_momentum_list + local_momentum_list]
             
     df_vgm_score1 = df_vgm_score1.rename(columns={'vgm_score_rank':'VGM_Ratings',
                                 'value_score_rank':'Value',
@@ -3004,7 +3032,7 @@ def production_vgm_score_US(df_vgm_score,df_sector,df_marketcap):
                                 'sector':'Sector',
                                 'industry':'Industry',
                                 'Company':'Name_of_Company',
-                                'marketcap': 'Marketcap',
+                                'marketCap': 'Marketcap',
                                 'momentum_3_rank': 'Short_Term_Momentum',
                                 'momentum_6_rank': 'Medium_Term_Momentum',
                                 'momentum_12_rank':'Long_Term_Momentum',
@@ -3020,6 +3048,11 @@ def production_vgm_score_US(df_vgm_score,df_sector,df_marketcap):
     df_vgm_score1['Short_Term_Industry_Momentum'] = df_vgm_score1['Short_Term_Industry_Momentum'].astype(float)/2
     df_vgm_score1['Medium_Term_Industry_Momentum'] = df_vgm_score1['Medium_Term_Industry_Momentum'].astype(float)/2
     df_vgm_score1['Long_Term_Industry_Momentum'] = df_vgm_score1['Long_Term_Industry_Momentum'].astype(float)/2
+
+    factor_metrics = ['PB_Ratio','PS_Ratio',	'PE_Ratio',	'Dividend_Yield',
+                    'Price-to-Free-Cash-Flow_Ratio','FCF_Yield','EV-to-EBITDA','Revenue_Growth',
+                        'EPS_Growth','Operating_Income_Growth','FCF_Growth','Asset_Growth','ROE','ROCE']
+    df_vgm_score1[factor_metrics] = df_vgm_score1[factor_metrics].astype(float)/2
 
     def round_dataframe_columns(df,columns_to_round):
         df[columns_to_round] = df[columns_to_round].round(2)
@@ -3041,7 +3074,7 @@ def production_vgm_score_US(df_vgm_score,df_sector,df_marketcap):
 
 
     # df_vgm_score1.to_csv(EXP_DIR + 'df_vgm_score' + '_' + FORMATION_DATE.strftime("%Y-%m-%d") + '_US.csv', index = False)
-    df_vgm_score1.to_csv(EXP_DIR + 'vgm_score_US.csv', index = False)
+    df_vgm_score1.to_csv(os.path.join(ROOT_DIR, 'vgm_score_US.csv'), index=False)
 
 def lower_bounded_allocation(df_momentum, df_sector, tech_pct=0, consum_pct=0, fin_pct=0, med_pct=0, indstr_pct=0, enrg_pct=0, othrs_pct=0):
     tech_industries = ['Internet Content & Information', 'Software - Application', 'Semiconductors', 'Computer Hardware',
@@ -3158,7 +3191,7 @@ def select_diversified_portfolio(df_tics_daily_window, df_vgm_score_top, df_sect
         tickers_list = portfolio_dict[max_portfolio]
 
         df_vgm_score_div = df_vgm_score_top[df_vgm_score_top['tic'].isin(tickers_list)]
-        # df_vgm_score_marketcap = df_vgm_score_marketcap.sort_values(by=['marketcap'],ascending=False)
+        # df_vgm_score_marketcap = df_vgm_score_marketcap.sort_values(by=['marketCap'],ascending=False)
         
         if SAVE_EXCEL:
             df_vgm_score_div.to_excel(os.path.join(EXCEL_DIR, f'div_df_vgm_score_{window_start_date.strftime("%Y-%m-%d")}.xlsx'), index=False)
@@ -3209,11 +3242,11 @@ def filter_stock_world(df_vgm_score, formation_date):
             else:
                 T = SMALL_CAP_THRESHOLD
 
-            df_vgm_score_mcap_sort = df_vgm_score.sort_values(by='marketcap', ascending=False).head(T)
+            df_vgm_score_mcap_sort = df_vgm_score.sort_values(by='marketCap', ascending=False).head(T)
             df_vgm_score = df_vgm_score[df_vgm_score['tic'].isin(df_vgm_score_mcap_sort['tic'])]
 
             if not (LARGE_CAP_FILTER or MID_CAP_FILTER):
-                df_vgm_score = df_vgm_score[df_vgm_score['marketcap'] >= MARKETCAP_THRESHOLD]
+                df_vgm_score = df_vgm_score[df_vgm_score['marketCap'] >= MARKETCAP_THRESHOLD]
                 logging.info(f"Number of tickers in midcap = {len(df_vgm_score)}")
 
             return df_vgm_score
@@ -3252,23 +3285,23 @@ def filter_stock_world(df_vgm_score, formation_date):
 #         if LARGE_CAP_FILTER:
 #             T = 100
 #             df_vgm_score_mcap_sort = df_vgm_score.copy()
-#             df_vgm_score_mcap_sort = df_vgm_score_mcap_sort.sort_values(by = ['marketcap'], ascending = False).head(T)
+#             df_vgm_score_mcap_sort = df_vgm_score_mcap_sort.sort_values(by = ['marketCap'], ascending = False).head(T)
 #             df_vgm_score = df_vgm_score[df_vgm_score['tic'].isin(df_vgm_score_mcap_sort['tic'])]
 
 #         elif MID_CAP_FILTER:
 #             T = 250
 #             df_vgm_score_mcap_sort = df_vgm_score.copy()
-#             df_vgm_score_mcap_sort = df_vgm_score_mcap_sort.sort_values(by = ['marketcap'], ascending = False).head(T)
+#             df_vgm_score_mcap_sort = df_vgm_score_mcap_sort.sort_values(by = ['marketCap'], ascending = False).head(T)
 #             df_vgm_score = df_vgm_score[df_vgm_score['tic'].isin(df_vgm_score_mcap_sort['tic'])]
 
 #         elif MID_CAP_FILTER:
 #             T = 1000
 #             df_vgm_score_mcap_sort = df_vgm_score.copy()
-#             df_vgm_score_mcap_sort = df_vgm_score_mcap_sort.sort_values(by = ['marketcap'], ascending = False).head(T)
+#             df_vgm_score_mcap_sort = df_vgm_score_mcap_sort.sort_values(by = ['marketCap'], ascending = False).head(T)
 #             df_vgm_score = df_vgm_score[df_vgm_score['tic'].isin(df_vgm_score_mcap_sort['tic'])]
 
 #         else:
-#             df_vgm_score = df_vgm_score[df_vgm_score['marketcap'] >= 20000]
+#             df_vgm_score = df_vgm_score[df_vgm_score['marketCap'] >= 20000]
 #             print(f"number of tickers in midcap = {len(df_vgm_score)}")
 
 
@@ -3295,11 +3328,11 @@ def compute_portfolio_return(date_list,df_tics_daily,df_marketcap, df_sector,df_
         tickers_list, df_marketcap = stock_filter_marketcap(df_marketcap, formation_date, MARKETCAP_TH)
 
         # if PRINT_FLAG:
-        #     print(f"Number of tickers after removing tickers with marketcap < {int(MARKETCAP_TH/1000000)}M = {len(tickers_list)}")
+        #     print(f"Number of tickers after removing tickers with marketCap < {int(MARKETCAP_TH/1000000)}M = {len(tickers_list)}")
 
-        # logging.info(f"Number of tickers after removing tickers with marketcap < {int(MARKETCAP_TH/1000000)}M = {len(tickers_list)}")
+        # logging.info(f"Number of tickers after removing tickers with marketCap < {int(MARKETCAP_TH/1000000)}M = {len(tickers_list)}")
 
-        # # Sort the DataFrame by 'marketcap' in descending order
+        # # Sort the DataFrame by 'marketCap' in descending order
         # df_marketcap = df_marketcap.head(100)
         # TICKERS_LIST = df_marketcap['tic'].tolist()
 
@@ -3688,6 +3721,64 @@ def process_industry_dataframe_v1(df):
     logging.info(f"Columns after process industry factors = {df_score.columns.to_list()}")
     return df_score
 
+def compute_risk_score(df_tics_daily, formation_date, tickers_list):
+    # Calculate risk scores
+    START_DATE = formation_date - timedelta(days=365*RISK_VOLATILITY_PERIOD)
+    END_DATE = formation_date
+
+    # LP = Load_n_Preprocess(tickers_list, START_DATE, END_DATE)
+    # df_tics_daily = LP.clean_daily_data(df_tics_daily)
+
+    df_risk = pd.DataFrame(columns=['tic'])
+
+    for period in RISK_PERIOD_LIST:
+        RS = Risk_Score(END_DATE, period)
+        key = f"risk_{period}"
+        df_risk_score = RS.kk_risk_score(df_tics_daily)
+        df_risk_score = df_risk_score.reset_index(drop=True)
+        df_risk_score = df_risk_score.rename(columns={"Risk_Score": key})
+        df_risk = pd.merge(df_risk, df_risk_score, on='tic', how='outer')
+
+    # Calculate the overall risk score
+    risk_columns = [f'risk_{period}' for period in RISK_PERIOD_LIST]
+    df_risk['risk_score'] = df_risk[risk_columns].mean(axis=1)
+    df_risk['risk_score'] = stats.zscore(df_risk['risk_score'])
+    df_risk = rank_risk_scores(df_risk, 'risk_score')
+
+    df_risk = df_risk.sort_values(by='risk_score', ascending=False)
+    
+    return df_risk
+
+class Risk_Score:
+    def __init__(self, formation_date, period):
+        self.formation_date = formation_date
+        self.end_date = pd.to_datetime(self.formation_date)
+        self.start_date = self.end_date - timedelta(days=365*period)
+
+    def kk_risk_score(self, df_tics_daily):
+        df_tics_daily = df_tics_daily[(df_tics_daily['date'] >= self.start_date) & (df_tics_daily['date'] <= self.end_date)].reset_index(drop=True)
+        df_tics_daily_pivot = df_tics_daily.pivot(index='date', columns='tic', values='close')
+        df_tics_daily_pivot = df_tics_daily_pivot.fillna(method='ffill').fillna(method='bfill')
+        all_daily_return = df_tics_daily_pivot.pct_change()
+        all_daily_return = all_daily_return.dropna()
+        
+
+        # Filter negative returns
+        negative_returns = all_daily_return[all_daily_return < 0]
+
+        # Compute the standard deviation of negative returns
+        risk_score = negative_returns.std().fillna(0)
+        # risk_score = risk_score.fillna(0)
+
+
+        # risk_score = all_daily_return.std()  # Standard deviation of daily returns
+        risk_zscore = stats.zscore(risk_score)
+
+
+        df_tics_risk_zscore = pd.DataFrame({'tic': df_tics_daily.tic.unique(), 'Risk_Score': risk_zscore})
+        # print('Risk scores are computed.')
+        return df_tics_risk_zscore
+
 def main_prod():
     validate_combination(RATING_OR_SCORE, VGM_METHOD)                                     # Validate the combination of rating_or_score and vgm_method
     df_tics_daily, df_marketcap, df_sector, df_funda = load_raw_data()                    # Load raw data from the local directory
@@ -3726,18 +3817,15 @@ def main_prod():
         df_momentum_ind = compute_industrial_momentum_score(df_tics_daily_window, df_vgm_score,FORMATION_DATE)
         df_vgm_score = pd.merge(df_vgm_score, df_momentum_ind, on='tic', how='inner')
 
-        production_vgm_score_US(df_vgm_score,df_sector,df_marketcap)
+        for col in ['value_score','growth_score','momentum_score','momentum_3','momentum_6','momentum_12']:
+            df_vgm_score = rank_scores(df_vgm_score, col)
 
-    df_vgm_score = filter_stock_world(df_vgm_score,formation_date)
+        df_risk = compute_risk_score(df_tics_daily, FORMATION_DATE, df_vgm_score['tic'].to_list())
+        df_vgm_score = pd.merge(df_vgm_score, df_risk, on='tic', how='inner')
 
-    df_vgm_score_marketcap = df_vgm_score.merge(df_marketcap[['tic','marketCap']], on = 'tic', how = 'left')
-    if SAVE_EXCEL:
-        df_vgm_score_marketcap.to_excel(os.path.join(EXCEL_DIR, f'df_vgm_score_{window_start_date.strftime("%Y-%m-%d")}.xlsx'), index=False)
-
-    df_vgm_score_top = df_vgm_score_marketcap.iloc[0:N_TOP_TICKERS]
+        df_vgm_score = production_vgm_score_US(df_vgm_score, df_metrics, df_sector,df_marketcap)
 
     hours, minutes, seconds = computation_time(start_time, "Total execution time: ")
-
 
 
 # defin main function
