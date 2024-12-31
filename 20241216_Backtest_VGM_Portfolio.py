@@ -37,6 +37,7 @@ import shutil
 from typing import Union, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.stats import zscore
+import subprocess
 
 import pandas as pd
 import numpy as np
@@ -80,7 +81,7 @@ start_time = time.time()
 # GROUP4_FACTORS = ['returnOnEquity']
 # GROUP5_FACTORS = []
 
-# 'Price-to-Free-Cash-Flow_Ratio', 'Operating_Income_Growth', 'Asset_Growth', 'ROCE'
+# 'Price_to_Free_Cash_Flow_Ratio', 'Operating_Income_Growth', 'Asset_Growth', 'ROCE'
 
 GROUP1_FACTORS = ['priceToSalesRatio'] + ['operatingIncomeGrowth','assetGrowth']                                                    # Values are positive and lower value is preferable
 GROUP2_FACTORS = ['priceToBookRatio','priceEarningsRatio','enterpriseValueOverEBITDA'] + ['priceToFreeCashFlowsRatio']    # Values can be negative and lower value is preferable 
@@ -147,7 +148,7 @@ MARKETCAP_THRESHOLD = 20000
 # ============================   Portfolio variables   ==========================================
 PRODUCTION_FLAG = False
 EQUAL_WEIGHT_MOMENTUM = True
-EQUAL_FACTOR_WEIGHT = False
+EQUAL_FACTOR_WEIGHT = True
 CAP_FILTER = False
 LARGE_CAP_FILTER = False
 MID_CAP_FILTER = False
@@ -183,6 +184,7 @@ REG_COEFF_GROWTH = os.path.join(INDUSTRY_REGRESSION_DIR, 'growth/rf_growth_coeff
 EQ_REG_COEFF_VALUE = os.path.join(INDUSTRY_REGRESSION_DIR, 'value/eq_rf_value_coeffs_df.xlsx')
 EQ_REG_COEFF_GROWTH = os.path.join(INDUSTRY_REGRESSION_DIR, 'growth/eq_rf_growth_coeffs_df.xlsx')
 
+AZURE_DIR = "./Azure"
 ROOT_DIR = "./Exps"
 HEAD_STR = datetime.now().strftime("%Y%m%d-%H%M")
 
@@ -2815,8 +2817,8 @@ def production_vgm_score_IN():
             'priceToBookRatio_rank': 'PB_Ratio',
             'priceToSalesRatio_rank': 'PS_Ratio',
             'priceEarningsRatio_rank': 'PE_Ratio',
-            'priceToFreeCashFlowsRatio_rank': 'Price-to-Free-Cash-Flow_Ratio',
-            'enterpriseValueOverEBITDA_rank': 'EV-to-EBITDA',
+            'priceToFreeCashFlowsRatio_rank': 'Price_to_Free_Cash_Flow_Ratio',
+            'enterpriseValueOverEBITDA_rank': 'EV_to_EBITDA',
             'cashConversionCycle_rank': 'Cash Conversion Cycle',
             'debtToEquity_rank': 'Debt-to-Equity',
             'debtToAssets_rank': 'Debt-to-Asset',
@@ -2847,7 +2849,7 @@ def production_vgm_score_IN():
     # Rename columns in the dataframe
     df_vgm_score = df_vgm_score.rename(columns=rename_dict)
 
-    value_factors_list = ['PB_Ratio','PS_Ratio','PE_Ratio','Price-to-Free-Cash-Flow_Ratio','FCF_Yield','EV-to-EBITDA']
+    value_factors_list = ['PB_Ratio','PS_Ratio','PE_Ratio','Price_to_Free_Cash_Flow_Ratio','FCF_Yield','EV_to_EBITDA']
     growth_factors_list = ['Revenue_Growth','EPS_Growth','Operating_Income_Growth','FCF_Growth']
     global_momentum_list = ['momentum_3_rank','momentum_6_rank','momentum_12_rank']
     local_momentum_list = ['ind_momentum_3_rank','ind_momentum_6_rank','ind_momentum_12_rank']
@@ -2918,10 +2920,9 @@ def production_vgm_score_IN():
 
 
     factor_metrics = ['PB_Ratio','PS_Ratio',	'PE_Ratio',	'Dividend_Yield',
-                    	'Price-to-Free-Cash-Flow_Ratio','FCF_Yield','EV-to-EBITDA','Revenue_Growth',
+                    	'Price_to_Free_Cash_Flow_Ratio','FCF_Yield','EV_to_EBITDA','Revenue_Growth',
                         	'EPS_Growth','Operating_Income_Growth','FCF_Growth','Asset_Growth','ROE','ROCE']
     df_vgm_score1[factor_metrics] = df_vgm_score1[factor_metrics].astype(float)/2
-
 
     def round_dataframe_columns(df,columns_to_round):
         df[columns_to_round] = df[columns_to_round].round(2)
@@ -2940,8 +2941,8 @@ def production_vgm_score_US(df_vgm_score,df_metrics,df_sector,df_marketcap):
                 'priceToBookRatio': 'PB_Ratio',
                 'priceToSalesRatio': 'PS_Ratio',
                 'priceEarningsRatio': 'PE_Ratio',
-                'priceToFreeCashFlowsRatio': 'Price-to-Free-Cash-Flow_Ratio',
-                'enterpriseValueOverEBITDA': 'EV-to-EBITDA',
+                'priceToFreeCashFlowsRatio': 'Price_to_Free_Cash_Flow_Ratio',
+                'enterpriseValueOverEBITDA': 'EV_to_EBITDA',
                 'cashConversionCycle': 'Cash Conversion Cycle',
                 'debtToEquity': 'Debt-to-Equity',
                 'debtToAssets': 'Debt-to-Asset',
@@ -2973,7 +2974,7 @@ def production_vgm_score_US(df_vgm_score,df_metrics,df_sector,df_marketcap):
     df_vgm_score = df_vgm_score.rename(columns=rename_dict)
 
 
-    value_factors_list = ['PB_Ratio','PS_Ratio','PE_Ratio','Dividend_Yield','Price-to-Free-Cash-Flow_Ratio','FCF_Yield','EV-to-EBITDA']
+    value_factors_list = ['PB_Ratio','PS_Ratio','PE_Ratio','Dividend_Yield','Price_to_Free_Cash_Flow_Ratio','FCF_Yield','EV_to_EBITDA']
     growth_factors_list = ['Revenue_Growth','EPS_Growth','Operating_Income_Growth','FCF_Growth','Asset_Growth','ROE','ROCE']
     global_momentum_list = ['momentum_3_rank','momentum_6_rank','momentum_12_rank']
     local_momentum_list = ['ind_momentum_3_rank','ind_momentum_6_rank','ind_momentum_12_rank']
@@ -3049,9 +3050,10 @@ def production_vgm_score_US(df_vgm_score,df_metrics,df_sector,df_marketcap):
     df_vgm_score1['Medium_Term_Industry_Momentum'] = df_vgm_score1['Medium_Term_Industry_Momentum'].astype(float)/2
     df_vgm_score1['Long_Term_Industry_Momentum'] = df_vgm_score1['Long_Term_Industry_Momentum'].astype(float)/2
 
-    factor_metrics = ['PB_Ratio','PS_Ratio',	'PE_Ratio',	'Dividend_Yield',
-                    'Price-to-Free-Cash-Flow_Ratio','FCF_Yield','EV-to-EBITDA','Revenue_Growth',
+    factor_metrics = ['PB_Ratio','PS_Ratio', 'PE_Ratio','Dividend_Yield',
+                    'Price_to_Free_Cash_Flow_Ratio','FCF_Yield','EV_to_EBITDA','Revenue_Growth',
                         'EPS_Growth','Operating_Income_Growth','FCF_Growth','Asset_Growth','ROE','ROCE']
+
     df_vgm_score1[factor_metrics] = df_vgm_score1[factor_metrics].astype(float)/2
 
     def round_dataframe_columns(df,columns_to_round):
@@ -3074,7 +3076,7 @@ def production_vgm_score_US(df_vgm_score,df_metrics,df_sector,df_marketcap):
 
 
     # df_vgm_score1.to_csv(EXP_DIR + 'df_vgm_score' + '_' + FORMATION_DATE.strftime("%Y-%m-%d") + '_US.csv', index = False)
-    df_vgm_score1.to_csv(os.path.join(ROOT_DIR, 'vgm_score_US.csv'), index=False)
+    df_vgm_score1.to_csv(os.path.join(AZURE_DIR, 'vgm_score_US.csv'), index=False)
 
 def lower_bounded_allocation(df_momentum, df_sector, tech_pct=0, consum_pct=0, fin_pct=0, med_pct=0, indstr_pct=0, enrg_pct=0, othrs_pct=0):
     tech_industries = ['Internet Content & Information', 'Software - Application', 'Semiconductors', 'Computer Hardware',
@@ -3828,7 +3830,22 @@ def main_prod():
     hours, minutes, seconds = computation_time(start_time, "Total execution time: ")
 
 
+def upload_azure_cloud():
+    directory = os.path.join(os.path.abspath(os.getcwd()), AZURE_DIR)
+    file_list = os.listdir(directory)
+    csv_files = [file for file in file_list if file.endswith('.csv')]
+    csv_paths = [os.path.join(directory, file) for file in csv_files]
+
+    for local_filename, local_file_path in zip(csv_files, csv_paths):
+        azure_file_path = f'https://mkgdls.blob.core.windows.net/raw-data/Stock_Factor_Rating/{local_filename}?sv=2020-02-10&st=2022-10-09T14%3A27%3A08Z&se=2050-12-31T14%3A27%3A00Z&sr=c&sp=racwdlmeop&sig=6bYIK3IOGGxLCUEw4jyPVO%2BwExKu%2F7WTivPnw5oFPhA%3D'
+        print(f"azcopy copy '{local_file_path}' '{azure_file_path}' --recursive")
+        subprocess.run(['azcopy', 'copy', local_file_path, azure_file_path, '--recursive'], check=True)  # Windows
+        # subprocess.run(['./azcopy', 'copy', local_file_path, azure_file_path, '--recursive'], check=True)  # macOS
+
+    print("Uploaded to Azure")
+
 # defin main function
 if __name__ == "__main__":
     # main()
-    main_prod()
+    # main_prod()
+    # upload_azure_cloud()
