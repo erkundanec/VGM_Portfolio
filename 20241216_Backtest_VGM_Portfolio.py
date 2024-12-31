@@ -47,6 +47,8 @@ import statistics
 import pdb
 
 import empyrical as ep
+from typing import Dict, Tuple
+from pathlib import Path
 
 # ==================   Import libraries for plotting   ========================
 import matplotlib.pyplot as plt
@@ -98,7 +100,7 @@ VGM_METHOD_OPTIONS = ['min-max_avg', 'percentile_avg', 'z-score_avg', 'only-mome
 # Define your portfolio style
 RATING_OR_SCORE = 'score'
 VGM_METHOD = 'z-score_avg'
-SCALING_METHOD = 'z-score'                         # z-score   'min-max'  
+SCALING_METHOD = 'no-scaling'                         # z-score   'min-max'  no-scaling
 
 SCORE_FUNCTION = 'five_group'               # 'five_group'   or 'two_cat'
 CONSIDER_RISK_FACTOR = 'no'
@@ -112,13 +114,13 @@ START_DATE =  '2020-01-01'    #   '2020-08-01'  a bug in this month in a perticu
 END_DATE = '2024-12-31'
 START_DATE = pd.to_datetime(START_DATE)
 END_DATE = pd.to_datetime(END_DATE) 
-# FORMATION_DATE = pd.Timestamp.today().date()
+FORMATION_DATE = pd.Timestamp.today().normalize()
 
 # =========================== Define Directories: Data and Exp ========================================
 READ_FROM_PICKLE = False
-EXP_MODE = True
-PRINT_FLAG = False
 DEBUG = False
+EXP_MODE = False
+PRINT_FLAG = False
 SAVE_EXCEL = False
 SAVE_PLOT = True
 PLOT_RANGE_FLAG = False
@@ -160,8 +162,8 @@ else:
 
 # ========================== Define directories ========================================
 DATA_DIR = '../../../Database/VGM_datasets/'
-INDUSTRY_REGRESSION_DIR = "./Reg_Results/"
-PATH_DATA = "../FinRecipes/examples/Data_Download/data/"
+INDUSTRY_REGRESSION_DIR = "./Reg_Results/20241227_0533/"
+PATH_DATA = "../FinRecipes/examples/Data_Download/data/Russell3000/"
 PATH_DAILY_DATA = os.path.join(PATH_DATA, "df_tics_ohlcv_russell3000.h5")
 PATH_MARKETCAP_DATA = os.path.join(PATH_DATA, "df_tics_marketcap_russell3000.h5")
 PATH_SECTOR_DATA = os.path.join(PATH_DATA, "df_tics_sector_info_russell3000.h5")
@@ -308,18 +310,6 @@ class Load_n_Preprocess:
             by=['date', 'tic']
         ).reset_index(drop=True)
 
-    # def filter_data(self, df_tics_daily):
-    #     if len(self.tickers_list) == 0:
-    #         self.tickers_list = list(df_tics_daily['tic'].unique())
-    #     else:
-    #         df_tics_daily = df_tics_daily.loc[df_tics_daily['tic'].isin(self.tickers_list)]
-        
-    #     df_tics_daily['date'] = pd.to_datetime(df_tics_daily['date'])
-    #     df_tics_daily = df_tics_daily[(df_tics_daily['date'] >= self.start_date) & (df_tics_daily['date'] <= self.end_date)]
-    #     df_tics_daily = df_tics_daily.sort_values(by=['date', 'tic'],ignore_index=True).reset_index(drop=True)
-        
-    #     return df_tics_daily
-
     def clean_daily_data(self, df, missing_values_allowed=0.01, print_missing_values=False):
         # Create pivot table for close prices
         df_pivot = df.pivot(index='date', columns='tic', values='close')
@@ -459,15 +449,70 @@ def transform_coefficients(coeffs_dict):
             transformed_coefficients[industry][metric] = value
     return transformed_coefficients
 
-def load_factors_coefficients_US_v2():
-    def clean_and_transform(file_path):
-        df = pd.read_excel(file_path).rename(columns={'Unnamed: 0': 'metrics'}).set_index('metrics')
-        return transform_coefficients(df.apply(lambda row: row.dropna().to_dict(), axis=1).to_dict())
+# def load_factors_coefficients_US_v2():
+#     def clean_and_transform(file_path):
+#         df = pd.read_excel(file_path).rename(columns={'Unnamed: 0': 'metrics'}).set_index('metrics')
+#         return transform_coefficients(df.apply(lambda row: row.dropna().to_dict(), axis=1).to_dict())
 
-    value_coefficients = clean_and_transform(os.path.join(INDUSTRY_REGRESSION_DIR, 'value/rf_value_coeffs_df.xlsx'))
-    growth_coefficients = clean_and_transform(os.path.join(INDUSTRY_REGRESSION_DIR, 'growth/rf_growth_coeffs_df.xlsx'))
+#     value_coefficients = clean_and_transform(os.path.join(INDUSTRY_REGRESSION_DIR, 'value/rf_value_coeffs_df.xlsx'))
+#     growth_coefficients = clean_and_transform(os.path.join(INDUSTRY_REGRESSION_DIR, 'growth/rf_growth_coeffs_df.xlsx'))
 
-    return value_coefficients, growth_coefficients
+#     return value_coefficients, growth_coefficients
+
+# def load_factors_coefficients_US_v2():
+#     rf_value_coeffs_df = pd.read_excel(REG_COEFF_VALUE)
+#     rf_value_coeffs_df_cleaned = rf_value_coeffs_df.rename(columns={'Unnamed: 0': 'metrics'})
+#     rf_value_coeffs_df_cleaned.set_index('metrics', inplace=True)
+#     # Transpose so industries are columns and metrics are rows
+#     rf_value_coeffs_df_cleaned = rf_value_coeffs_df_cleaned.T
+    
+#     rf_growth_coeffs_df = pd.read_excel(REG_COEFF_GROWTH)
+#     rf_growth_coeffs_df_cleaned = rf_growth_coeffs_df.rename(columns={'Unnamed: 0': 'metrics'})
+#     rf_growth_coeffs_df_cleaned.set_index('metrics', inplace=True)
+#     # Transpose so industries are columns and metrics are rows  
+#     rf_growth_coeffs_df_cleaned = rf_growth_coeffs_df_cleaned.T
+
+#     # Transform coefficients maintaining the same structure but with transposed data
+#     value_coefficients = rf_value_coeffs_df_cleaned.apply(lambda col: col.dropna().to_dict(), axis=0).to_dict()
+#     growth_coefficients = rf_growth_coeffs_df_cleaned.apply(lambda col: col.dropna().to_dict(), axis=0).to_dict()
+
+#     return value_coefficients, growth_coefficients
+
+
+def load_factors_coefficients_US_v2(
+                                    value_path: str = REG_COEFF_VALUE,
+                                    growth_path: str = REG_COEFF_GROWTH
+                                    ) -> Tuple[Dict, Dict]:
+    """Load and process value and growth factor coefficients efficiently.
+    
+    Returns:
+        Tuple[Dict, Dict]: Value and growth coefficients dictionaries
+    """
+    logger = logging.getLogger(__name__)
+    
+    def process_coefficients(path: str) -> Dict:
+        """Process coefficient file to dictionary."""
+        try:
+            return (pd.read_excel(path)
+                   .rename(columns={'Unnamed: 0': 'metrics'})
+                   .set_index('metrics')
+                   .T
+                   .apply(lambda col: col.dropna().to_dict(), axis=0)
+                   .to_dict())
+        except Exception as e:
+            logger.error(f"Error processing {path}: {str(e)}")
+            raise
+    
+    try:
+        logger.info("Loading factor coefficients")
+        value_coefficients = process_coefficients(value_path)
+        growth_coefficients = process_coefficients(growth_path)
+        logger.info("Successfully loaded coefficients")
+        return value_coefficients, growth_coefficients
+        
+    except Exception as e:
+        logger.error(f"Failed to load coefficients: {str(e)}")
+        raise
 
 class Momentum_Score_v2:
     def __init__(self, formation_date: Union[str, datetime], risk_free_rate: float = 0) -> None:
@@ -1061,18 +1106,19 @@ def compute_group_ranks(df_score, group_factors, group_num):
         result[col] = pd.Series(index=df_score.index)
         
         if group_num == 1:
+            result[col] = pd.qcut(series, q=10, labels=False, duplicates='drop') + 1
+                
+        elif group_num == 2:
             mask = series <= 0
             valid_values = series[~mask]
             if len(valid_values) >= 2:
-                ranks = pd.qcut(valid_values, q=10, labels=False, duplicates='drop')
+                ranks = pd.qcut(valid_values, q = 9, labels=False, duplicates='drop')
                 result.loc[~mask, col] = ranks + 1
                 result.loc[mask, col] = 10
-                
-        elif group_num == 2:
-            result[col] = pd.qcut(series, q=10, labels=False, duplicates='drop') + 1
-            
+           
         elif group_num == 3:
             result[col] = 10 - pd.qcut(series, q=10, labels=False, duplicates='drop')
+            # result[col] = pd.qcut(series, 10, labels=range(10, 0, -1), duplicates='drop')
             
         elif group_num == 4:
             mask = series <= 0
@@ -1391,55 +1437,145 @@ def process_industry_dataframe(df, formation_date, industry):
     logging.info(f"Columns after process industry factors = {df_score.columns.to_list()}")
     return df_score
 
+def calculate_scores(
+                        df_score: pd.DataFrame, 
+                        transformed_coefficients: Dict[str, Dict[str, float]], 
+                        industry: str, 
+                        score_type: str
+                    ) -> pd.Series:
+    """
+    Generalized function to calculate scores (value or growth) for a given industry.
+    
+    Args:
+        df_score (pd.DataFrame): DataFrame containing the scores.
+        transformed_coefficients (Dict[str, Dict[str, float]]): Dictionary of coefficients.
+        industry (str): Industry for which to calculate the scores.
+        score_type (str): Type of score to calculate ('value' or 'growth').
+    
+    Returns:
+        pd.Series: Series containing the calculated scores.
+    """
+    logger = logging.getLogger(__name__)
+    coefficients = transformed_coefficients.get(industry, None)
+    
+    if coefficients is None:
+        logger.error(f"Industry {industry} not found in coefficients.")
+        return pd.Series(np.zeros(len(df_score)), index=df_score.index)
+    
+    # Initialize score series with zeros
+    score = pd.Series(np.zeros(len(df_score)), index=df_score.index)
+    
+    # Filter only the relevant columns from df_score
+    relevant_metrics = [metric for metric in coefficients if metric in df_score.columns]
+    
+    if not relevant_metrics:
+        logger.warning(f"No relevant metrics found in DataFrame for industry {industry}.")
+        return score
+    
+    # Calculate the score using vectorized operations
+    score = df_score[relevant_metrics].mul(pd.Series(coefficients)).sum(axis=1)
+    
+    # Log missing metrics
+    missing_metrics = set(coefficients) - set(relevant_metrics)
+    for metric in missing_metrics:
+        logger.warning(f"Metric {metric} not found in DataFrame for industry {industry}.")
+    
+    logger.info(f"Successfully calculated {score_type} scores for industry {industry}.")
+    return score
+
+# Example usage:
+# value_scores = calculate_scores(df_score, transformed_coefficients, industry, 'value')
+# growth_scores = calculate_scores(df_score, transformed_coefficients, industry, 'growth')
+
+# def calculate_scores(
+#     df_score: pd.DataFrame, 
+#     transformed_coefficients: Dict[str, Dict[str, float]], 
+#     industry: str, 
+#     score_type: str
+# ) -> pd.Series:
+#     """
+#     Generalized function to calculate scores (value or growth) for a given industry.
+    
+#     Args:
+#         df_score (pd.DataFrame): DataFrame containing the scores.
+#         transformed_coefficients (Dict[str, Dict[str, float]]): Dictionary of coefficients.
+#         industry (str): Industry for which to calculate the scores.
+#         score_type (str): Type of score to calculate ('value' or 'growth').
+    
+#     Returns:
+#         pd.Series: Series containing the calculated scores.
+#     """
+#     logger = logging.getLogger(__name__)
+#     coefficients = transformed_coefficients.get(industry, None)
+    
+#     if coefficients is None:
+#         logger.error(f"Industry {industry} not found in coefficients.")
+#         return pd.Series(np.zeros(len(df_score)), index=df_score.index)
+    
+#     score = pd.Series(np.zeros(len(df_score)), index=df_score.index)
+    
+#     for metric, weight in coefficients.items():
+#         if metric in df_score.columns:
+#             score += df_score[metric] * weight
+#         else:
+#             logger.warning(f"Metric {metric} not found in DataFrame for industry {industry}.")
+    
+#     logger.info(f"Successfully calculated {score_type} scores for industry {industry}.")
+#     return score
+
+# Example usage:
+# value_scores = calculate_scores(df_score, transformed_coefficients, industry, 'value')
+# growth_scores = calculate_scores(df_score, transformed_coefficients, industry, 'growth')
+
 # def calculate_value_scores(df_score, transformed_coefficients, industry):
 #     coefficients = transformed_coefficients.get(industry, {})
 #     value_score = sum(df_score[metric] * weight for metric, weight in coefficients.items() if metric in df_score.columns)
 #     return value_score
 
 # Define the existing functions
-def calculate_value_scores(df_score, transformed_coefficients, industry):
-    coefficients = transformed_coefficients.get(industry, None)
-    if coefficients is None:
-        print(f"Industry {industry} not found in coefficients.")
-        logging.info(f"Industry {industry} not found in coefficients.")
-        return pd.Series(np.zeros(len(df_score)), index=df_score.index)
-    value_score = pd.Series(np.zeros(len(df_score)), index=df_score.index)
-    for metric, weight in coefficients.items():
-        if metric in df_score.columns:
-            value_score += df_score[metric] * weight
-        else:
-            print(f"Metric {metric} not found in DataFrame for industry {industry}.")
-            logging.info(f"Metric {metric} not found in DataFrame for industry {industry}.")
+# def calculate_value_scores(df_score, transformed_coefficients, industry):
+#     coefficients = transformed_coefficients.get(industry, None)
+#     if coefficients is None:
+#         print(f"Industry {industry} not found in coefficients.")
+#         logging.info(f"Industry {industry} not found in coefficients.")
+#         return pd.Series(np.zeros(len(df_score)), index=df_score.index)
+#     value_score = pd.Series(np.zeros(len(df_score)), index=df_score.index)
+#     for metric, weight in coefficients.items():
+#         if metric in df_score.columns:
+#             value_score += df_score[metric] * weight
+#         else:
+#             print(f"Metric {metric} not found in DataFrame for industry {industry}.")
+#             logging.info(f"Metric {metric} not found in DataFrame for industry {industry}.")
     
-    return value_score
+#     return value_score
+
+# # def calculate_growth_scores(df_score, transformed_coefficients, industry):
+# #     coefficients = transformed_coefficients.get(industry, {})
+# #     growth_score = sum(df_score[metric] * weight for metric, weight in coefficients.items() if metric in df_score.columns)
+# #     return growth_score
 
 # def calculate_growth_scores(df_score, transformed_coefficients, industry):
-#     coefficients = transformed_coefficients.get(industry, {})
-#     growth_score = sum(df_score[metric] * weight for metric, weight in coefficients.items() if metric in df_score.columns)
+#     coefficients = transformed_coefficients.get(industry, None)
+#     if coefficients is None:
+#         print(f"Industry {industry} not found in coefficients.")
+#         logging.info(f"Industry {industry} not found in coefficients.")
+#         return pd.Series(np.zeros(len(df_score)), index=df_score.index)
+    
+#     growth_score = pd.Series(np.zeros(len(df_score)), index=df_score.index)
+    
+#     for metric, weight in coefficients.items():
+#         if metric in df_score.columns:
+#             growth_score += df_score[metric] * weight
+#         else:
+#             print(f"Metric {metric} not found in DataFrame for industry {industry}.")
+#             logging.info(f"Metric {metric} not found in DataFrame for industry {industry}.")
+    
 #     return growth_score
-
-def calculate_growth_scores(df_score, transformed_coefficients, industry):
-    coefficients = transformed_coefficients.get(industry, None)
-    if coefficients is None:
-        print(f"Industry {industry} not found in coefficients.")
-        logging.info(f"Industry {industry} not found in coefficients.")
-        return pd.Series(np.zeros(len(df_score)), index=df_score.index)
-    
-    growth_score = pd.Series(np.zeros(len(df_score)), index=df_score.index)
-    
-    for metric, weight in coefficients.items():
-        if metric in df_score.columns:
-            growth_score += df_score[metric] * weight
-        else:
-            print(f"Metric {metric} not found in DataFrame for industry {industry}.")
-            logging.info(f"Metric {metric} not found in DataFrame for industry {industry}.")
-    
-    return growth_score
 
 def rank_scores(df, score_column):
     try:
         # Adjust the quantile labels so that the highest scores get rank 10
-        df[f'{score_column}_rank'] = pd.qcut(df[score_column], 10, labels=range(1, 11), duplicates='drop')
+        df[f'{score_column}_rank'] = pd.qcut(df[score_column], 10, labels=False, duplicates='drop') + 1
     except ValueError as e:
         # Handle the error by notifying and setting qcut rank to None
         # print(f"Error in ranking scores for {score_column} using qcut: {e}")
@@ -1492,32 +1628,8 @@ def normalize_column(column):
 
 def compute_value_growth_score_US(df_funda, df_sector, formation_date, value_coeff, growth_coeff):
     industry_dfs = df_funda.copy()
-    industry_dfs['date'] = pd.to_datetime(industry_dfs['date'])
+    # industry_dfs['date'] = pd.to_datetime(industry_dfs['date'])
     industry_dfs = industry_dfs[(industry_dfs['date'] > formation_date - timedelta(days=365)) & (industry_dfs['date'] < formation_date)]
-
-    # if DO_PROCESS_FUNDA_DATA:
-    #     industry_dfs = process_funda_data(df_funda, df_sector)
-    # else:
-    #     if READ_FROM_PICKLE:
-    #         with open(os.path.join(DATA_DIR, 'industry_dfs_US.pkl'), 'rb') as f:
-    #             industry_dfs = pickle.load(f)
-    #     else:
-    #         # Read from HDF5
-    #         industry_dfs = pd.read_hdf(os.path.join(DATA_DIR, 'industry_dfs_US.h5'), key='df')
-
-    #         # with pd.HDFStore(os.path.join(DATA_DIR, 'industry_dfs_US.h5')) as store:
-    #         #     # Clean up keys by removing both 'industry_' prefix and '/' character
-    #         #     industry_dfs = {k.replace('industry_','').replace('/',''): store[k] 
-    #         #                 for k in store.keys()}
-
-    #     logging.info(f"Columns in fundamental data = {industry_dfs[list(industry_dfs.keys())[1]].columns.to_list()}")
-
-
-
-    # if SAVE_EXCEL:
-    #     combined_df = pd.concat(industry_dfs.values(), ignore_index=True)
-    #     combined_df = combined_df.drop_duplicates(subset=['symbol'], keep='first')
-    #     combined_df.to_excel('./examples/Quant_Rating/datasets/industry_dfs_US.xlsx', index=False)
 
     df_industry_scores = pd.DataFrame([])
     sum_i = 0
@@ -1535,14 +1647,6 @@ def compute_value_growth_score_US(df_funda, df_sector, formation_date, value_coe
 
         if industry == 'REIT - Hotel & Motel':
             continue
-        # print(industry)
-        
-        # df['date'] = pd.to_datetime(df['date'])
-        # df = df[(df['date'] > formation_date - timedelta(days=365)) & (df['date'] < formation_date)]
-
-        # latest_data = df.sort_values(by='date', ascending=False).groupby('tic').first().reset_index()
-        # # latest_data = latest_data.dropna()
-
 
         latest_data = df.sort_values(by='date', ascending=False).groupby('tic').first().reset_index()
         required_columns = ['tic', 'date'] + VALUE_METRICES + GROWTH_METRICES
@@ -1567,23 +1671,30 @@ def compute_value_growth_score_US(df_funda, df_sector, formation_date, value_coe
             df_score['sector']  = df['Sector'].unique()[0]
 
             # Calculate value and growth scores
-            try:
-                df_score['value_score'] = calculate_value_scores(df_score, value_coeff, industry)
-                df_score['growth_score'] = calculate_growth_scores(df_score, growth_coeff, industry)      # normalize industry score between 0-1, standardize
-            except:
-                pdb.set_trace()
+            df_score['value_score'] = calculate_scores(df_score, value_coeff, industry, 'value')
+            df_score['growth_score'] = calculate_scores(df_score, growth_coeff, industry, 'growth')
                 
-            if SCALING_METHOD == 'z-score':
-                df_score['value_score'] = (df_score['value_score'] - df_score['value_score'].mean()) / df_score['value_score'].std()
-                df_score['growth_score'] = (df_score['growth_score'] - df_score['growth_score'].mean()) / df_score['growth_score'].std()
+            try:
+                if SCALING_METHOD == 'z-score':
+                    df_score['value_score'] = stats.zscore(df_score['value_score'])
+                    df_score['growth_score'] = stats.zscore(df_score['growth_score'])
+                    logging.info(f"Applied z-score scaling to value and growth scores for industry {industry}.")
+                
+                elif SCALING_METHOD == 'min-max':
+                    df_score['value_score'] = min_max_normalize(df_score['value_score'])
+                    df_score['growth_score'] = min_max_normalize(df_score['growth_score'])
+                    logging.info(f"Applied min-max scaling to value and growth scores for industry {industry}.")
+                
+                elif SCALING_METHOD == 'no-scaling':
+                    logging.info(f"No scaling applied to value and growth scores for industry {industry}.")
+                
+                else:
+                    raise ValueError(f"Invalid SCALING_METHOD: {SCALING_METHOD}")
             
-            elif SCALING_METHOD == 'min-max':
-                df_score['value_score'] = (df_score['value_score'] - df_score['value_score'].min()) / (df_score['value_score'].max() - df_score['value_score'].min())
-                df_score['growth_score'] = (df_score['growth_score'] - df_score['growth_score'].min()) / (df_score['growth_score'].max() - df_score['growth_score'].min())
-            
-            else:
-                df_score['value_score'] = (df_score['value_score'] - df_score['value_score'].min()) / (df_score['value_score'].max() - df_score['value_score'].min())
-                df_score['growth_score'] = (df_score['growth_score'] - df_score['growth_score'].min()) / (df_score['growth_score'].max() - df_score['growth_score'].min())
+            except Exception as e:
+                logging.error(f"Error applying scaling method {SCALING_METHOD} to industry {industry}: {str(e)}")
+                raise
+               
             
 
             # # Rank the scores
@@ -1741,17 +1852,12 @@ def compute_vgm_score(df_tics_daily, formation_date, tickers_list, df_rank_marke
                 df_value_growth = compute_value_growth_score_IN(formation_date, value_coeff, growth_coeff)
 
             elif COUNTRY == 'US':
-                if EQUAL_FACTOR_WEIGHT:
-                    value_coeff, growth_coeff = equal_factors_coefficients_US_v2()
-                else:
-                    value_coeff, growth_coeff = load_factors_coefficients_US_v2()
-
+                value_coeff, growth_coeff = load_factors_coefficients_US_v2()
                 df_value_growth = compute_value_growth_score_US(df_funda, df_sector, formation_date, value_coeff, growth_coeff)
-
             else:
                 print(f"Other country do not support")
 
-            df_value_growth = df_value_growth.rename(columns = {'symbol':'tic'})
+            # df_value_growth = df_value_growth.rename(columns = {'symbol':'tic'})
 
             df_tics_daily = df_tics_daily[df_tics_daily['tic'].isin(df_value_growth['tic'])]        # select only those tickers which are scored (V and G)
             
@@ -2395,81 +2501,83 @@ def compute_stock_metrics(df):
 
     return pd.DataFrame(metrics)
 
-# def compute_stock_metrics(df):
-#     metrics = []
+def compute_metrics_for_ticker(group):
+    # Ensure data is sorted by date for each group
+    group = group.sort_index()
 
-#     # Ensure date is in datetime format
-#     df['date'] = pd.to_datetime(df['date'])
-#     df.set_index('date', inplace=True)
+    # Calculate Previous Close (shift close by 1 day)
+    group['prev_close'] = group['close'].shift(1)
 
-#     # Group data by ticker
-#     grouped = df.groupby('tic')
+    # Calculate Change and Change%
+    group['change'] = group['close'] - group['prev_close']
+    group['change%'] = (group['change'] / group['prev_close']) * 100
 
-#     for ticker, group in grouped:
-#         # Ensure data is sorted by date for each group
-#         group = group.sort_index()
+    # 52-week high and low
+    group['52_week_high'] = group['high'].rolling(window=252, min_periods=1).max()
+    group['52_week_low'] = group['low'].rolling(window=252, min_periods=1).min()
 
-#         # Calculate Previous Close (shift close by 1 day)
-#         group['prev_close'] = group['close'].shift(1)
+    # Average Volume (20-day rolling average)
+    group['avg_volume_20d'] = group['volume'].rolling(window=20, min_periods=1).mean()
 
-#         # Calculate Change and Change%
-#         group['change'] = group['close'] - group['prev_close']
-#         group['change%'] = (group['change'] / group['prev_close']) * 100
+    # YTD_Performance (from start of the current year)
+    current_year = pd.Timestamp.today().year
+    start_of_year = group.index[group.index.year == current_year][0]
+    ytd_performance = 100 * (group['close'].iloc[-1] - group['close'].loc[start_of_year]) / group['close'].loc[start_of_year]
 
-#         # 52-week high and low
-#         group['52_week_high'] = group['high'].rolling(window=252, min_periods=1).max()
-#         group['52_week_low'] = group['low'].rolling(window=252, min_periods=1).min()
+    # 1-week (7-day), 1-month (30-day), 3-month (90-day), 6-month (180-day), and 1-year (365-day) returns
+    def calculate_return(days_ago):
+        # Ensure there's enough data
+        if len(group) > days_ago:
+            past_date = group.index[-days_ago]
+            return 100 * (group['close'].iloc[-1] - group['close'].loc[past_date]) / group['close'].loc[past_date]
+        else:
+            return None  # Not enough data for this period
 
-#         # Average Volume (20-day rolling average)
-#         group['avg_volume_20d'] = group['volume'].rolling(window=20, min_periods=1).mean()
+    one_week_return = calculate_return(7)
+    one_month_return = calculate_return(30)
+    three_month_return = calculate_return(90)
+    six_month_return = calculate_return(180)
+    one_year_return = calculate_return(365)
 
-#         # YTD_Performance (from start of the current year)
-#         current_year = pd.Timestamp.today().year
-#         start_of_year = group.index[group.index.year == current_year][0]
-#         ytd_performance = 100 * (group['close'].iloc[-1] - group['close'].loc[start_of_year]) / group['close'].loc[start_of_year]
+    # Get the latest row
+    latest_data = group.iloc[-1]
 
-#         # 1-week (7-day), 1-month (30-day), 3-month (90-day), 6-month (180-day), and 1-year (365-day) returns
-#         def calculate_return(days_ago):
-#             # Ensure there's enough data
-#             if len(group) > days_ago:
-#                 past_date = group.index[-days_ago]
-#                 return 100 * (group['close'].iloc[-1] - group['close'].loc[past_date]) / group['close'].loc[past_date]
-#             else:
-#                 return None  # Not enough data for this period
+    # Return the calculated metrics for the current ticker
+    return {
+        'Symbol': group['tic'].iloc[0],
+        'Open': latest_data['open'],
+        'High': latest_data['high'],
+        'Low': latest_data['low'],
+        'Close': latest_data['close'],
+        'Prev_Close': latest_data['prev_close'],
+        'Change': latest_data['change'],
+        'Change%': latest_data['change%'],
+        'Volume': latest_data['volume'],
+        'Avg_Vol_20D': latest_data['avg_volume_20d'],
+        '52_Week_High': latest_data['52_week_high'],
+        '52_Week_Low': latest_data['52_week_low'],
+        'YTD_Performance': ytd_performance,
+        '1W_Return': one_week_return,
+        '1M_Return': one_month_return,
+        '3M_Return': three_month_return,
+        '6M_Return': six_month_return,
+        '1Y_Return': one_year_return,
+        'Last_Available_Date': latest_data.name,  # Keep the date of the last available row
+    }
 
-#         one_week_return = calculate_return(7)
-#         one_month_return = calculate_return(30)
-#         three_month_return = calculate_return(90)
-#         six_month_return = calculate_return(180)
-#         one_year_return = calculate_return(365)
+def compute_stock_metrics(df):
+    # Ensure date is in datetime format
+    df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
 
-#         # Get the latest row
-#         latest_data = group.iloc[-1]
+    # Group data by ticker
+    grouped = df.groupby('tic')
 
-#        # Append the calculated metrics for the current ticker
-#         metrics.append({
-#             'Symbol': ticker,
-#             'Open': latest_data['open'],
-#             'High': latest_data['high'],
-#             'Low': latest_data['low'],
-#             'Close': latest_data['close'],
-#             'Prev_Close': latest_data['prev_close'],
-#             'Change': latest_data['change'],
-#             'Change%': latest_data['change%'],
-#             'Volume': latest_data['volume'],
-#             'Avg_Vol_20D': latest_data['avg_volume_20d'],
-#             '52_Week_High': latest_data['52_week_high'],
-#             '52_Week_Low': latest_data['52_week_low'],
-#             'YTD_Performance': ytd_performance,
-#             '1W_Return': one_week_return,
-#             '1M_Return': one_month_return,
-#             '3M_Return': three_month_return,
-#             '6M_Return': six_month_return,
-#             '1Y_Return': one_year_return,
-#             'Last_Available_Date': latest_data.name,  # Keep the date of the last available row
-#         })
+    # Use multiprocessing to compute metrics for each ticker in parallel
+    with Pool(cpu_count()) as pool:
+        metrics = pool.map(compute_metrics_for_ticker, [group for _, group in grouped])
 
-#     return pd.DataFrame(metrics)
+    return pd.DataFrame(metrics)
 
 def create_date_list(df_tics_daily, freq):
     if freq == 'Monthly':
@@ -2500,51 +2608,110 @@ def create_date_list(df_tics_daily, freq):
 
     return valid_date_list
 
-def load_raw_data():
-    # Load raw data from the local directory
-    df_tics_daily = pd.read_hdf(PATH_DAILY_DATA)
-    df_marketcap = pd.read_hdf(PATH_MARKETCAP_DATA)
-    df_sector = pd.read_hdf(PATH_SECTOR_DATA)
-    df_funda = pd.read_hdf(PATH_FUNDA_DATA)
+# def load_raw_data():
+#     # Load raw data from the local directory
+#     df_tics_daily = pd.read_hdf(PATH_DAILY_DATA)
+#     df_marketcap = pd.read_hdf(PATH_MARKETCAP_DATA)
+#     df_sector = pd.read_hdf(PATH_SECTOR_DATA)
+#     df_funda = pd.read_hdf(PATH_FUNDA_DATA)
 
-    df_sector = df_sector.rename(columns= {'Ticker': 'tic'})
-    df_funda = df_funda.loc[:, ~df_funda.columns.duplicated()]
+#     df_sector = df_sector.rename(columns= {'Ticker': 'tic'})
+#     df_funda = df_funda.loc[:, ~df_funda.columns.duplicated()]
 
-    if {'incomeBeforeTax', 'totalAssets'}.issubset(df_funda.columns):
-        mask = (df_funda['totalAssets'].notna() & (df_funda['totalAssets'] != 0))
-        df_funda.loc[mask, 'er'] = np.divide(
-            df_funda.loc[mask, 'incomeBeforeTax'],
-            df_funda.loc[mask, 'totalAssets']
-        )
+#     if {'incomeBeforeTax', 'totalAssets'}.issubset(df_funda.columns):
+#         mask = (df_funda['totalAssets'].notna() & (df_funda['totalAssets'] != 0))
+#         df_funda.loc[mask, 'er'] = np.divide(
+#             df_funda.loc[mask, 'incomeBeforeTax'],
+#             df_funda.loc[mask, 'totalAssets']
+#         )
 
-    df_sector_slim = df_sector[['tic', 'Sector', 'Industry']].copy()
-    df_funda = pd.merge(df_funda,df_sector_slim, on='tic',how='inner')
+#     df_sector_slim = df_sector[['tic', 'Sector', 'Industry']].copy()
+#     df_funda = pd.merge(df_funda,df_sector_slim, on='tic',how='inner')
 
-    if 'releaseDate' in df_funda.columns:
-        if 'date' in df_funda.columns:
-            df_funda = df_funda.drop(columns=['date'])
+#     if 'releaseDate' in df_funda.columns:
+#         if 'date' in df_funda.columns:
+#             df_funda = df_funda.drop(columns=['date'])
         
-        # Handle release dates
-        mask = df_funda['releaseDate'].notna()
-        df_funda.loc[mask, 'releaseDate'] = pd.to_datetime(df_funda.loc[mask, 'releaseDate'])
+#         # Handle release dates
+#         mask = df_funda['releaseDate'].notna()
+#         df_funda.loc[mask, 'releaseDate'] = pd.to_datetime(df_funda.loc[mask, 'releaseDate'])
         
-        # Handle AMC dates
-        df_funda['time'] = df_funda['time'].fillna('amc')
-        amc_mask = df_funda['time'].str.contains('amc', case=False, na=False)
-        df_funda.loc[amc_mask, 'releaseDate'] += pd.Timedelta(days=1)
+#         # Handle AMC dates
+#         df_funda['time'] = df_funda['time'].fillna('amc')
+#         amc_mask = df_funda['time'].str.contains('amc', case=False, na=False)
+#         df_funda.loc[amc_mask, 'releaseDate'] += pd.Timedelta(days=1)
         
-        # Rename to standard column
-        df_funda = df_funda.rename(columns={'releaseDate': 'date'})
+#         # Rename to standard column
+#         df_funda = df_funda.rename(columns={'releaseDate': 'date'})
 
-    current_date = pd.Timestamp.now().date()
-    n_years_ago = current_date - pd.DateOffset(years=6)
-    date_mask = (df_funda['date'].dt.date.between(n_years_ago.date(), current_date))
-    df_funda = df_funda.loc[date_mask]
+#     current_date = pd.Timestamp.now().date()
+#     n_years_ago = current_date - pd.DateOffset(years=6)
+#     date_mask = (df_funda['date'].dt.date.between(n_years_ago.date(), current_date))
+#     df_funda = df_funda.loc[date_mask]
     
-    # Convert 'date' column to datetime format
-    df_marketcap['date'] = pd.to_datetime(df_marketcap['date'])
+#     # Convert 'date' column to datetime format
+#     df_marketcap['date'] = pd.to_datetime(df_marketcap['date'])
 
-    return df_tics_daily, df_marketcap, df_sector, df_funda
+#     return df_tics_daily, df_marketcap, df_sector, df_funda
+
+def load_raw_data():
+    try:
+        logging.info("Loading raw data from local directory.")
+        
+        df_tics_daily = pd.read_hdf(PATH_DAILY_DATA)
+        df_marketcap = pd.read_hdf(PATH_MARKETCAP_DATA)
+        df_sector = pd.read_hdf(PATH_SECTOR_DATA)
+        df_funda = pd.read_hdf(PATH_FUNDA_DATA)
+        
+        logging.info("Raw data loaded successfully.")
+        
+        df_sector = df_sector.rename(columns={'Ticker': 'tic'})
+        df_funda = df_funda.loc[:, ~df_funda.columns.duplicated()]
+        
+        if {'incomeBeforeTax', 'totalAssets'}.issubset(df_funda.columns):
+            mask = (df_funda['totalAssets'].notna() & (df_funda['totalAssets'] != 0))
+            df_funda.loc[mask, 'er'] = np.divide(
+                df_funda.loc[mask, 'incomeBeforeTax'],
+                df_funda.loc[mask, 'totalAssets']
+            )
+            logging.info("Calculated 'er' for non-null and non-zero 'totalAssets'.")
+        
+        df_sector_slim = df_sector[['tic', 'Sector', 'Industry']].copy()
+        df_funda = pd.merge(df_funda, df_sector_slim, on='tic', how='inner')
+        logging.info("Merged sector information into fundamental data.")
+        
+        if 'releaseDate' in df_funda.columns:
+            if 'date' in df_funda.columns:
+                df_funda = df_funda.drop(columns=['date'])
+                logging.info("Dropped existing 'date' column from fundamental data.")
+            
+            mask = df_funda['releaseDate'].notna()
+            df_funda.loc[mask, 'releaseDate'] = pd.to_datetime(df_funda.loc[mask, 'releaseDate'])
+            df_funda['time'] = df_funda['time'].fillna('amc')
+            amc_mask = df_funda['time'].str.contains('amc', case=False, na=False)
+            df_funda.loc[amc_mask, 'releaseDate'] += pd.Timedelta(days=1)
+            df_funda = df_funda.rename(columns={'releaseDate': 'date'})
+            logging.info("Processed 'releaseDate' and renamed to 'date'.")
+        
+        current_date = pd.Timestamp.now().normalize()
+        n_years_ago = current_date - pd.DateOffset(years=8)
+        date_mask = (df_funda['date'].dt.date.between(n_years_ago.date(), current_date.date()))
+        df_funda = df_funda.loc[date_mask]
+        logging.info("Filtered fundamental data for the last 8 years.")
+
+        # filter df_tics_daily for the last 8 years
+        df_tics_daily['date'] = pd.to_datetime(df_tics_daily['date'])
+        df_tics_daily = df_tics_daily[df_tics_daily['date'].dt.date.between(n_years_ago.date(), current_date.date())]
+        logging.info("Filtered daily data for the last 8 years.")
+
+        df_marketcap['date'] = pd.to_datetime(df_marketcap['date'])
+        logging.info("Converted 'date' column in market cap data to datetime format.")
+        
+        return df_tics_daily, df_marketcap, df_sector, df_funda
+    
+    except Exception as e:
+        logging.error(f"Error occurred while loading raw data: {e}")
+        raise
 
 class production_run:
     def __init__(self, df_tics_daily, date_list, tickers_list, df_metrics, df_vgm_score, df_marketcap, df_sector, INDICES_LIST, LP):
@@ -2558,16 +2725,71 @@ class production_run:
         self.INDICES_LIST = INDICES_LIST
         self.LP = LP
 
-def stock_filter_marketcap(df_marketcap, formation_date):
-    # Filter the tickers based on the market capitalization
-    formation_date = pd.to_datetime(formation_date)
-    temp_mktcap = df_marketcap[df_marketcap['date'] <= formation_date]
-    temp_mktcap = temp_mktcap.loc[temp_mktcap.groupby('tic')['date'].idxmax()]
-    temp_mktcap = temp_mktcap[temp_mktcap['marketCap'] >= MARKETCAP_TH]
-    df_rank_marketcap = temp_mktcap.sort_values(by='marketCap', ascending=False).reset_index(drop=True)
-    tickers_list = df_rank_marketcap['tic'].values.tolist()
-
-    return tickers_list, df_rank_marketcap
+def stock_filter_marketcap(df_marketcap: pd.DataFrame, 
+                          formation_date: Union[str, datetime, pd.Timestamp], 
+                          marketcap_th: float) -> tuple[list, pd.DataFrame]:
+    """
+    Filter stocks based on market capitalization threshold at a given formation date.
+    
+    Args:
+        df_marketcap (pd.DataFrame): DataFrame containing market cap data with columns ['date', 'tic', 'marketCap']
+        formation_date (Union[str, datetime, pd.Timestamp]): Date to filter market cap data
+        marketcap_th (float): Market capitalization threshold value
+    
+    Returns:
+        tuple[list, pd.DataFrame]: Filtered list of tickers and DataFrame with market cap rankings
+        
+    Raises:
+        ValueError: If required columns are missing or inputs are invalid
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Filtering stocks by market cap threshold: {marketcap_th:,.0f}")
+    
+    try:
+        # Validate inputs
+        required_cols = ['date', 'tic', 'marketCap']
+        if not all(col in df_marketcap.columns for col in required_cols):
+            raise ValueError(f"DataFrame must contain columns: {required_cols}")
+            
+        if not isinstance(marketcap_th, (int, float)) or marketcap_th <= 0:
+            raise ValueError("Market cap threshold must be a positive number")
+            
+        # Convert formation_date to datetime
+        formation_date = pd.to_datetime(formation_date)
+        
+        # Filter data
+        temp_mktcap = df_marketcap[df_marketcap['date'] <= formation_date].copy()
+        
+        if temp_mktcap.empty:
+            logger.warning(f"No market cap data found before {formation_date}")
+            return [], pd.DataFrame()
+            
+        # Get latest market cap before formation date for each ticker
+        temp_mktcap = temp_mktcap.loc[temp_mktcap.groupby('tic')['date'].idxmax()]
+        
+        # Apply market cap threshold
+        temp_mktcap = temp_mktcap[temp_mktcap['marketCap'] >= marketcap_th]
+        
+        if temp_mktcap.empty:
+            logger.warning(f"No stocks found above market cap threshold {marketcap_th:,.0f}")
+            return [], pd.DataFrame()
+            
+        # Rank by market cap
+        df_rank_marketcap = temp_mktcap.sort_values(
+            by='marketCap', 
+            ascending=False
+        ).reset_index(drop=True)
+        
+        tickers_list = df_rank_marketcap['tic'].tolist()
+        
+        logger.info(f"Found {len(tickers_list)} stocks above market cap threshold")
+        logger.debug(f"Market cap range: {df_rank_marketcap['marketCap'].min():,.0f} - {df_rank_marketcap['marketCap'].max():,.0f}")
+        
+        return tickers_list, df_rank_marketcap
+        
+    except Exception as e:
+        logger.error(f"Error filtering stocks by market cap: {str(e)}")
+        raise
 
 def production_vgm_score_IN():
     rename_dict = {
@@ -2687,7 +2909,7 @@ def production_vgm_score_IN():
     df_vgm_score1['Last_Available_Date'] = df_vgm_score1['Last_Available_Date'].dt.date
     df_vgm_score1.to_excel(EXP_DIR + 'df_vgm_score' + '_' + FORMATION_DATE.strftime("%Y-%m-%d") + '_IN.xlsx', index = False)
 
-def production_vgm_score_US():
+def production_vgm_score_US(df_vgm_score,df_sector,df_marketcap):
     rename_dict = {
                 'priceToBookRatio_rank': 'PB_Ratio',
                 'priceToSalesRatio_rank': 'PS_Ratio',
@@ -2729,6 +2951,8 @@ def production_vgm_score_US():
     growth_factors_list = ['Revenue_Growth','EPS_Growth','Operating_Income_Growth','FCF_Growth','Asset_Growth','ROE','ROCE']
     global_momentum_list = ['momentum_3_rank','momentum_6_rank','momentum_12_rank']
     local_momentum_list = ['ind_momentum_3_rank','ind_momentum_6_rank','ind_momentum_12_rank']
+
+    
 
     # Rename dictionary for CAT1_RATIOS and CAT2_RATIOS
     
@@ -3068,12 +3292,12 @@ def compute_portfolio_return(date_list,df_tics_daily,df_marketcap, df_sector,df_
         start_date_momentum = formation_date - timedelta(days = 365 * MOM_VOLATILITY_PERIOD + 30)
         end_date_momentum= formation_date
 
-        tickers_list, df_marketcap = stock_filter_marketcap(df_marketcap, formation_date)
+        tickers_list, df_marketcap = stock_filter_marketcap(df_marketcap, formation_date, MARKETCAP_TH)
 
-        if PRINT_FLAG:
-            print(f"Number of tickers after removing tickers with marketcap < {int(MARKETCAP_TH/1000000)}M = {len(tickers_list)}")
+        # if PRINT_FLAG:
+        #     print(f"Number of tickers after removing tickers with marketcap < {int(MARKETCAP_TH/1000000)}M = {len(tickers_list)}")
 
-        logging.info(f"Number of tickers after removing tickers with marketcap < {int(MARKETCAP_TH/1000000)}M = {len(tickers_list)}")
+        # logging.info(f"Number of tickers after removing tickers with marketcap < {int(MARKETCAP_TH/1000000)}M = {len(tickers_list)}")
 
         # # Sort the DataFrame by 'marketcap' in descending order
         # df_marketcap = df_marketcap.head(100)
@@ -3233,8 +3457,8 @@ def compute_portfolio_return(date_list,df_tics_daily,df_marketcap, df_sector,df_
     return df_return_bnh, lines
 
 def main():
-    validate_combination(RATING_OR_SCORE, VGM_METHOD)     # Validate the combination of rating_or_score and vgm_method
-    df_tics_daily, df_marketcap, df_sector, df_funda = load_raw_data()                                       # Load raw data from the local directory
+    validate_combination(RATING_OR_SCORE, VGM_METHOD)                                     # Validate the combination of rating_or_score and vgm_method
+    df_tics_daily, df_marketcap, df_sector, df_funda = load_raw_data()                    # Load raw data from the local directory
     logging.info(f'OHLCV and Marketcap data are loaded from local directory.')
 
     # find the count of tickers in df_tics_daily and df_marketcap. And cound the common ticker in both the dataframes.
@@ -3250,14 +3474,9 @@ def main():
     logging.info(f"Number of tickers in df_marketcap: {len(df_marketcap.tic.unique())}")
     logging.info(f"Number of common tickers in df_tics_daily and df_marketcap: {len(set(df_tics_daily.tic.unique()).intersection(set(df_marketcap.tic.unique())))}")
     
-
     TICKERS_LIST = list(set(df_tics_daily.tic.unique())-set(INDICES_LIST))
     logging.info(f"Number of ticker in the world of stocks: {len(TICKERS_LIST)}")
     logging.info(f'Stock world: {NAME_STOCK_WORLD}')
-
-    # ================ For production run, compute stock metrics   =================
-    if PRODUCTION_FLAG:
-        df_metrics = compute_stock_metrics(df_tics_daily[df_tics_daily['tic'].isin(TICKERS_LIST)])
 
     date_list = create_date_list(df_tics_daily, PORTFOLIO_FREQ)
     
@@ -3390,7 +3609,138 @@ def main():
 
         # print(f"No. of tickers in the portfolio: {N_TOP_TICKERS}")
 
+def compute_industrial_momentum_score(df_tics_daily, df_value_growth,formation_date):
+    df_industry_mom = pd.DataFrame([])
+    for ind in df_value_growth.industry.unique():
+        tickers_list = df_value_growth[df_value_growth['industry'] == ind].tic.to_list()
+        df_tics_daily_ind = df_tics_daily[df_tics_daily.tic.isin(tickers_list)]
+        # print(f'{ind} = {len(tickers_list)} and {len(df_tics_daily_ind)}')
+
+        MS = Momentum_Score_updated(formation_date)
+        df_momentum = MS.compute_momentum_score(df_tics_daily_ind)
+
+        df_momentum = rank_scores(df_momentum, 'momentum_score')
+
+        momentum_columns = [f'momentum_{period}' for period in MOMENTUM_PERIOD_LIST]
+        for col in momentum_columns:
+            df_momentum = rank_scores(df_momentum, col)
+
+        df_momentum = df_momentum.sort_values(by='momentum_score',ascending=False)
+
+        # df_tics_daily_temp = df_tics_daily_ind[df_tics_daily_ind['date'] <= pd.to_datetime(END_DATE)].reset_index(drop=True)
+        # df_tics_daily_temp = pd.DataFrame(df_tics_daily_temp.pivot(index='date', columns='tic', values='close').iloc[-1]).reset_index()
+        # df_tics_daily_temp.columns = ['tic','close']    
+        # df_momentum = pd.merge(df_momentum, df_tics_daily_temp, on='tic', how='left')
+        # df_momentum = df_momentum.sort_values(by='momentum_score',ascending=False)
+
+
+
+        # df_tics_mom = compute_momentum_score(df_tics_daily_ind, formation_date, tickers_list)
+        df_industry_mom = pd.concat([df_industry_mom, df_momentum], ignore_index= True)
+
+    df_industry_mom = df_industry_mom.rename(columns = {'momentum_3_rank': 'ind_momentum_3_rank',
+                                                        'momentum_6_rank': 'ind_momentum_6_rank',
+                                                        'momentum_12_rank': 'ind_momentum_12_rank'})
+    return df_industry_mom[['tic','ind_momentum_3_rank','ind_momentum_6_rank','ind_momentum_12_rank']]
+
+def process_industry_dataframe_v1(df):
+    df['date'] = pd.to_datetime(df['date'])
+    latest_data = df.sort_values(by='date', ascending=False).groupby('symbol').first().reset_index()
+    required_columns = ['symbol', 'date'] + CAT1_RATIOS + CAT2_RATIOS
+    # logging.info(f"Columns in required for V and G scores = {required_columns}")
+    
+    df_filtered = latest_data[required_columns]
+
+    for col in df_filtered.columns:
+        if col not in ['symbol', 'date']:
+            df_filtered[col] = pd.to_numeric(df_filtered[col], errors='coerce')
+
+    df_filtered.fillna(df_filtered.median(numeric_only=True), inplace=True)               # questionable (we may drop the na row)
+    df_score = df_filtered.copy()
+
+    for col in CAT1_RATIOS:
+        if col in df_score.columns:
+            df_score[f'{col}_rank'] = df_score[col].apply(lambda x: score_factor(df_score[col], x, 1))
+
+    for col in CAT2_RATIOS:
+        if col in df_score.columns:
+            df_score[f'{col}_rank'] = df_score[col].apply(lambda x: score_factor(df_score[col], x, 2))
+
+    for col in CAT1_RATIOS:
+        if col in df_score.columns:
+            df_score[col] = df_score[col].apply(lambda x: score(df_score[col], x, 1))
+
+    for col in CAT2_RATIOS:
+        if col in df_score.columns:
+            df_score[col] = df_score[col].apply(lambda x: score(df_score[col], x, 2))
+
+
+    # # Check for duplicates in the 'symbol' column
+    # duplicates = df_score[df_score.duplicated('symbol', keep=False)]
+
+    # # Print the duplicates
+    # if not duplicates.empty:
+    #     print("Duplicate symbols found:")
+    #     print(duplicates[['symbol']].drop_duplicates())
+    # else:
+    #     print("No duplicate symbols found.")
+
+    logging.info(f"Columns after process industry factors = {df_score.columns.to_list()}")
+    return df_score
+
+def main_prod():
+    validate_combination(RATING_OR_SCORE, VGM_METHOD)                                     # Validate the combination of rating_or_score and vgm_method
+    df_tics_daily, df_marketcap, df_sector, df_funda = load_raw_data()                    # Load raw data from the local directory
+    logging.info(f'OHLCV and Marketcap data are loaded from local directory.')
+    logging.info(f"Number of tickers in df_tics_daily: {len(df_tics_daily.tic.unique())}")
+    logging.info(f"Number of tickers in df_marketcap: {len(df_marketcap.tic.unique())}")
+    logging.info(f"Number of common tickers in df_tics_daily and df_marketcap: {len(set(df_tics_daily.tic.unique()).intersection(set(df_marketcap.tic.unique())))}")
+    
+    TICKERS_LIST = list(set(df_tics_daily.tic.unique())-set(INDICES_LIST))
+    logging.info(f"Number of ticker in the world of stocks: {len(TICKERS_LIST)}")
+    logging.info(f'Stock world: {NAME_STOCK_WORLD}')
+
+    # ================ For production run, compute stock metrics   =================
+    df_metrics = compute_stock_metrics(df_tics_daily[df_tics_daily['tic'].isin(TICKERS_LIST)])
+
+    start_date_momentum = FORMATION_DATE - timedelta(days = 365 * MOM_VOLATILITY_PERIOD + 30)
+    end_date_momentum= FORMATION_DATE
+
+    tickers_list, df_marketcap = stock_filter_marketcap(df_marketcap, FORMATION_DATE, MARKETCAP_TH)
+
+    LP = Load_n_Preprocess(tickers_list, start_date_momentum, end_date_momentum)
+    df_tics_daily_window = LP.filter_data(df_tics_daily)
+    df_tics_daily_window, tickers_list = LP.clean_daily_data(df_tics_daily_window, missing_values_allowed = 0.01)
+
+
+    # value_coeff, growth_coeff = load_factors_coefficients()
+    # df_new_score = compute_value_growth_score(FORMATION_DATE, value_coeff, growth_coeff)
+    if COUNTRY == 'IN':
+        df_vgm_score = compute_vgm_score(df_tics_daily, formation_date, tickers_list, df_marketcap, df_funda, df_sector, RATING_OR_SCORE, VGM_METHOD, CONSIDER_RISK_FACTOR)
+        if PRODUCTION_FLAG:
+            production_vgm_score_IN(df_vgm_score)
+
+    elif COUNTRY == 'US':
+        df_vgm_score = compute_vgm_score(df_tics_daily_window, FORMATION_DATE, tickers_list, df_marketcap, df_funda, df_sector, RATING_OR_SCORE, VGM_METHOD, CONSIDER_RISK_FACTOR)
+    
+        df_momentum_ind = compute_industrial_momentum_score(df_tics_daily_window, df_vgm_score,FORMATION_DATE)
+        df_vgm_score = pd.merge(df_vgm_score, df_momentum_ind, on='tic', how='inner')
+
+        production_vgm_score_US(df_vgm_score,df_sector,df_marketcap)
+
+    df_vgm_score = filter_stock_world(df_vgm_score,formation_date)
+
+    df_vgm_score_marketcap = df_vgm_score.merge(df_marketcap[['tic','marketCap']], on = 'tic', how = 'left')
+    if SAVE_EXCEL:
+        df_vgm_score_marketcap.to_excel(os.path.join(EXCEL_DIR, f'df_vgm_score_{window_start_date.strftime("%Y-%m-%d")}.xlsx'), index=False)
+
+    df_vgm_score_top = df_vgm_score_marketcap.iloc[0:N_TOP_TICKERS]
+
+    hours, minutes, seconds = computation_time(start_time, "Total execution time: ")
+
+
 
 # defin main function
 if __name__ == "__main__":
-    main()
+    # main()
+    main_prod()

@@ -41,12 +41,12 @@ import matplotlib.pyplot as plt
 plt.rcParams['font.size'] = 14                                      # Change 14 to your preferred size
 
 
-parser = argparse.ArgumentParser(description='Run factor regression analysis.')
-parser.add_argument('--WHICH_FACTOR', type=str, required=True, help='Specify which factor to use in the analysis.')
-args = parser.parse_args()
-WHICH_FACTOR = args.WHICH_FACTOR
+# parser = argparse.ArgumentParser(description='Run factor regression analysis.')
+# parser.add_argument('--WHICH_FACTOR', type=str, required=True, help='Specify which factor to use in the analysis.')
+# args = parser.parse_args()
+# WHICH_FACTOR = args.WHICH_FACTOR
 
-# WHICH_FACTOR = 'value'                                             # 'value', 'growth', 'profitability'
+WHICH_FACTOR = 'value'                                             # 'value', 'growth', 'profitability'
 
 DEBUG = False
 COUNTRY = 'US'
@@ -459,6 +459,8 @@ def load_raw_data():
         
         df_sector = df_sector.rename(columns={'Ticker': 'tic'})
         df_funda = df_funda.loc[:, ~df_funda.columns.duplicated()]
+
+        # df_funda = compute_profitability_metrics(df_funda)
         
         if {'incomeBeforeTax', 'totalAssets'}.issubset(df_funda.columns):
             mask = (df_funda['totalAssets'].notna() & (df_funda['totalAssets'] != 0))
